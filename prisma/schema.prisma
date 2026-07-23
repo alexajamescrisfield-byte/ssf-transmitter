@@ -1,0 +1,84 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// One row per demo/customer tenant. The `slug` is the per-tenant transmitter
+// identity used in every discovery/JWKS/stream URL: /t/{slug}/...
+model Tenant {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  name      String
+  // Phase 0: plaintext bearer token ISC pastes into Receiver > Authentication
+  // > API Token. Fine for local SQLite dev; before any real deployment this
+  // must be hashed at rest like any other credential.
+  apiToken  String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  signingKey SigningKey?
+  streams    Stream[]
+  auditLogs  AuditLog[]
+}
+
+// RS256 keypair used to sign outbound SETs for this tenant.
+// Phase 0: private key stored as PEM text in this DB (SQLite, local dev only).
+// Before any real deployment, move `privateKeyPem` into a managed vault
+// (e.g. Supabase Vault) and store only a reference/key-id here instead.
+model SigningKey {
+  id            String   @id @default(cuid())
+  tenantId      String   @unique
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  kid           String   @unique
+  privateKeyPem String
+  publicKeyJwk  String // JSON-stringified JWK, served at /.well-known/jwks.json
+  createdAt     DateTime @default(now())
+}
+
+enum StreamStatus {
+  enabled
+  paused
+  disabled
+}
+
+// A stream ISC creates against POST /t/{slug}/ssf/streams.
+// deliveryEndpointUrl is supplied BY ISC when it creates the stream -- the
+// transmitter must always push to this URL, never to a manually typed one.
+model Stream {
+  id                  String       @id @default(cuid())
+  tenantId            String
+  tenant              Tenant       @relation(fields: [tenantId], references: [id])
+  deliveryEndpointUrl String
+  eventsRequested     String // JSON-stringified array of CAEP event type URIs
+  status              StreamStatus @default(enabled)
+  authorizationHeader String? // if ISC supplied a bearer token for its delivery endpoint
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  auditLogs AuditLog[]
+}
+
+// Every send attempt, success or failure. Server-side, per Section 10 of the
+// design doc -- this is the system-of-record independent of any one SE's
+// browser session.
+model AuditLog {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  streamId     String?
+  stream       Stream?  @relation(fields: [streamId], references: [id])
+  jti          String   @unique
+  eventType    String
+  subject      String
+  httpStatus   Int?
+  responseBody String?
+  success      Boolean
+  createdAt    DateTime @default(now())
+}

@@ -1,0 +1,92 @@
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+import { requireTenantByBearerToken } from "@/lib/auth";
+import { CAEP_EVENT_TYPES, caepEventTypeUri } from "@/lib/caep";
+
+// POST /t/{slug}/ssf/streams
+// ISC calls this to register a stream after discovery succeeds. ISC supplies
+// its own delivery endpoint_url -- we must push only to that URL.
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ slug: string }> },
+) {
+  const { slug } = await params;
+  const tenant = await requireTenantByBearerToken(slug, request);
+  if (!tenant) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json();
+  const endpointUrl: string | undefined =
+    body?.delivery?.endpoint_url ?? body?.endpoint_url;
+  const requestedTypes: string[] = body?.events_requested ?? [];
+
+  if (!endpointUrl) {
+    return NextResponse.json(
+      { error: "Missing delivery.endpoint_url" },
+      { status: 400 },
+    );
+  }
+
+  const supportedUris = CAEP_EVENT_TYPES.map(caepEventTypeUri);
+  const unsupported = requestedTypes.filter((t) => !supportedUris.includes(t));
+  if (unsupported.length > 0) {
+    return NextResponse.json(
+      { error: `Unsupported event type(s): ${unsupported.join(", ")}` },
+      { status: 400 },
+    );
+  }
+
+  const stream = await prisma.stream.create({
+    data: {
+      tenantId: tenant.id,
+      deliveryEndpointUrl: endpointUrl,
+      eventsRequested: JSON.stringify(requestedTypes),
+      authorizationHeader: body?.delivery?.authorization_header ?? null,
+    },
+  });
+
+  return NextResponse.json(
+    {
+      stream_id: stream.id,
+      iss: tenant.slug,
+      aud: body?.aud ?? tenant.slug,
+      events_requested: requestedTypes,
+      events_delivered: requestedTypes,
+      delivery: {
+        method: "https://schemas.openid.net/secevent/risc/delivery-method/push",
+        endpoint_url: stream.deliveryEndpointUrl,
+      },
+    },
+    { status: 201 },
+  );
+}
+
+// GET /t/{slug}/ssf/streams
+// Lets ISC (or us, for debugging) list streams already registered.
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ slug: string }> },
+) {
+  const { slug } = await params;
+  const tenant = await requireTenantByBearerToken(slug, request);
+  if (!tenant) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const streams = await prisma.stream.findMany({
+    where: { tenantId: tenant.id },
+  });
+
+  return NextResponse.json({
+    streams: streams.map((s) => ({
+      stream_id: s.id,
+      status: s.status,
+      events_requested: JSON.parse(s.eventsRequested),
+      delivery: {
+        method: "https://schemas.openid.net/secevent/risc/delivery-method/push",
+        endpoint_url: s.deliveryEndpointUrl,
+      },
+    })),
+  });
+}
