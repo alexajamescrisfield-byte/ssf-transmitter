@@ -83,12 +83,12 @@ export async function sendSsfSignal({
   const jti = randomUUID();
   const privateKey = await importSigningPrivateKey(tenant.signingKey.privateKeyPem);
 
-  // ISC's parser requires `subject` as a top-level JWT claim, not just
-  // nested inside the event object -- confirmed via the verification SET
-  // failing the same way until this was added at both levels.
+  // Per the OpenID SSF spec Section 3.1: "A top-level claim named sub_id
+  // MUST be used to describe the primary subject of the event." Not
+  // "subject" -- that was the actual bug the whole time.
   const set = await new SignJWT({
     events,
-    subject: { format: "email", email: event.subjectEmail },
+    sub_id: { format: "email", email: event.subjectEmail },
   })
     .setProtectedHeader({
       alg: "RS256",
@@ -168,11 +168,10 @@ export async function sendVerificationSet({
   const jti = randomUUID();
   const privateKey = await importSigningPrivateKey(tenant.signingKey.privateKeyPem);
 
-  // ISC requires a subject claim, even for the verification handshake --
-  // it's not tied to a real identity, just a placeholder matching the
-  // receiver's configured subject format (email). ISC's parser still
-  // rejected this when it was only nested inside the event object, so it's
-  // included both there AND as a top-level JWT claim.
+  // Per the OpenID SSF spec Section 3.1: "A top-level claim named sub_id
+  // MUST be used to describe the primary subject of the event." Not a
+  // "subject" claim (nested or top-level) -- that was the actual bug.
+  // Placeholder subject, since verification isn't tied to a real identity.
   const verificationSubject = {
     format: "email",
     email: `verification@${tenant.slug}.ssf-transmitter`,
@@ -180,12 +179,11 @@ export async function sendVerificationSet({
 
   const events = {
     "https://schemas.openid.net/secevent/ssf/event-type/verification": {
-      subject: verificationSubject,
       ...(state ? { state } : {}),
     },
   };
 
-  const set = await new SignJWT({ events, subject: verificationSubject })
+  const set = await new SignJWT({ events, sub_id: verificationSubject })
     .setProtectedHeader({
       alg: "RS256",
       typ: "secevent+jwt",
