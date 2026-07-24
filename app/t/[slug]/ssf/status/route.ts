@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireTenantByBearerToken } from "@/lib/auth";
+import { tenantIssuer } from "@/lib/ssf";
 
 // POST /t/{slug}/ssf/status
 // Pause/enable/disable a stream. sendSsfSignal() checks this before every
@@ -38,7 +39,12 @@ export async function POST(
     data: { status: status as "enabled" | "paused" | "disabled" },
   });
 
-  return NextResponse.json({ stream_id: updated.id, status: updated.status });
+  return NextResponse.json({
+    stream_id: updated.id,
+    iss: tenantIssuer(tenant.slug),
+    aud: tenantIssuer(tenant.slug),
+    status: updated.status,
+  });
 }
 
 // GET /t/{slug}/ssf/status?stream_id=...
@@ -67,5 +73,10 @@ export async function GET(
     return NextResponse.json({ error: "Unknown stream_id" }, { status: 404 });
   }
 
-  return NextResponse.json({ stream_id: stream.id, status: stream.status });
+  return NextResponse.json({
+    stream_id: stream.id,
+    iss: tenantIssuer(tenant.slug),
+    aud: tenantIssuer(tenant.slug),
+    status: stream.status,
+  });
 }
