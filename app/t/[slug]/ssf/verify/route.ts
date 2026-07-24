@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { requireTenantByBearerToken } from "@/lib/auth";
 import { sendVerificationSet } from "@/lib/ssf";
 
@@ -23,17 +23,11 @@ export async function POST(
     return NextResponse.json({ error: "Missing stream_id" }, { status: 400 });
   }
 
-  try {
-    const result = await sendVerificationSet({
-      tenantSlug: slug,
-      streamId,
-      state,
-    });
-    return NextResponse.json({ accepted: true, ...result }, { status: 202 });
-  } catch (err) {
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : String(err) },
-      { status: 400 },
-    );
-  }
+  // ISC's verify call itself just needs a bare success acknowledgment, not
+  // the send result -- the real verification happens when ISC receives the
+  // pushed SET at its delivery endpoint. `after()` ensures the send
+  // actually completes even though we've already returned the response
+  // (a bare fire-and-forget call can get killed mid-flight on Vercel).
+  after(() => sendVerificationSet({ tenantSlug: slug, streamId, state }));
+  return new NextResponse(null, { status: 200 });
 }
