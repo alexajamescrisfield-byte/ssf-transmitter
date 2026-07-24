@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireTenantByBearerToken } from "@/lib/auth";
 import { CAEP_EVENT_TYPES, caepEventTypeUri } from "@/lib/caep";
+import { tenantIssuer } from "@/lib/ssf";
 
 // POST /t/{slug}/ssf/streams
 // ISC calls this to register a stream after discovery succeeds. ISC supplies
@@ -49,8 +50,8 @@ export async function POST(
   return NextResponse.json(
     {
       stream_id: stream.id,
-      iss: tenant.slug,
-      aud: body?.aud ?? tenant.slug,
+      iss: tenantIssuer(tenant.slug),
+      aud: body?.aud ?? tenantIssuer(tenant.slug),
       events_requested: requestedTypes,
       events_delivered: requestedTypes,
       delivery: {
