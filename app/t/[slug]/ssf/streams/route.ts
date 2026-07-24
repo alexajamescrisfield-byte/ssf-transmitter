@@ -64,6 +64,46 @@ export async function POST(
   );
 }
 
+// PATCH /t/{slug}/ssf/streams?stream_id=... (or stream_id in the JSON body)
+// ISC's "enable/pause/disable stream" action calls this directly, rather
+// than POST /ssf/status -- accept both so either receiver convention works.
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ slug: string }> },
+) {
+  const { slug } = await params;
+  const tenant = await requireTenantByBearerToken(slug, request);
+  if (!tenant) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  const streamId =
+    new URL(request.url).searchParams.get("stream_id") ?? body?.stream_id;
+  const status: string | undefined = body?.status;
+
+  if (!streamId || !["enabled", "paused", "disabled"].includes(status ?? "")) {
+    return NextResponse.json(
+      { error: "Requires stream_id and status in {enabled,paused,disabled}" },
+      { status: 400 },
+    );
+  }
+
+  const stream = await prisma.stream.findFirst({
+    where: { id: streamId, tenantId: tenant.id },
+  });
+  if (!stream) {
+    return NextResponse.json({ error: "Unknown stream_id" }, { status: 404 });
+  }
+
+  const updated = await prisma.stream.update({
+    where: { id: stream.id },
+    data: { status: status as "enabled" | "paused" | "disabled" },
+  });
+
+  return NextResponse.json({ stream_id: updated.id, status: updated.status });
+}
+
 // GET /t/{slug}/ssf/streams
 // Lets ISC (or us, for debugging) list streams, or fetch one by ?stream_id=
 // (some receivers poll a single stream's status this way rather than
