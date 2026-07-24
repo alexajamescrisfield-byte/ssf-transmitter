@@ -17,6 +17,13 @@ export async function POST(
   }
 
   const body = await request.json();
+  // TEMP diagnostic logging -- remove once we confirm ISC's actual verify
+  // request shape (headers + body) from Vercel Runtime Logs.
+  console.log(
+    "[ssf/verify POST] headers=%s body=%s",
+    JSON.stringify(Object.fromEntries(request.headers.entries())),
+    JSON.stringify(body),
+  );
   const streamId: string | undefined = body?.stream_id;
   const state: string | undefined = body?.state;
 
