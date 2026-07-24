@@ -54,7 +54,7 @@ export async function POST(
       events_requested: requestedTypes,
       events_delivered: requestedTypes,
       delivery: {
-        method: "https://schemas.openid.net/secevent/risc/delivery-method/push",
+        method: "urn:ietf:rfc:8935",
         endpoint_url: stream.deliveryEndpointUrl,
       },
     },
@@ -84,7 +84,7 @@ export async function GET(
       status: s.status,
       events_requested: JSON.parse(s.eventsRequested),
       delivery: {
-        method: "https://schemas.openid.net/secevent/risc/delivery-method/push",
+        method: "urn:ietf:rfc:8935",
         endpoint_url: s.deliveryEndpointUrl,
       },
     })),

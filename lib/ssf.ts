@@ -30,9 +30,10 @@ export function ssfConfigurationDocument(slug: string) {
   return {
     issuer,
     jwks_uri: `${issuer}/.well-known/jwks.json`,
-    delivery_methods_supported: [
-      "https://schemas.openid.net/secevent/risc/delivery-method/push",
-    ],
+    // ISC's Receiver validates this against the exact IETF-registered URN
+    // for RFC 8935 (push-based SET delivery), not the older
+    // schemas.openid.net-style URI some SSF examples use.
+    delivery_methods_supported: ["urn:ietf:rfc:8935"],
     configuration_endpoint: `${issuer}/ssf/streams`,
     status_endpoint: `${issuer}/ssf/status`,
     verification_endpoint: `${issuer}/ssf/verify`,
