@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { requireTenantByBearerToken } from "@/lib/auth";
-import { sendVerificationSet, tenantIssuer } from "@/lib/ssf";
+import { sendVerificationSet } from "@/lib/ssf";
 import { prisma } from "@/lib/prisma";
 
 // POST /t/{slug}/ssf/verify
@@ -34,14 +34,7 @@ export async function POST(
   // `after()` ensures the async SET push actually completes even though
   // we've already returned this response (fire-and-forget without it can
   // get killed mid-flight on Vercel). The real verification happens when
-  // ISC receives that pushed SET at its delivery endpoint -- this response
-  // just needs to echo back stream identity (iss/aud), same convention
-  // ISC validates on every other endpoint in this same workflow.
+  // ISC receives that pushed SET at its delivery endpoint.
   after(() => sendVerificationSet({ tenantSlug: slug, streamId, state }));
-  return NextResponse.json({
-    stream_id: stream.id,
-    iss: tenantIssuer(tenant.slug),
-    aud: tenantIssuer(tenant.slug),
-    status: stream.status,
-  });
+  return new NextResponse(null, { status: 202 });
 }
