@@ -78,6 +78,13 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => ({}));
+  // TEMP diagnostic logging -- remove once we confirm ISC's actual PATCH
+  // request shape from Vercel Runtime Logs.
+  console.log(
+    "[ssf/streams PATCH] query=%s body=%s",
+    request.url,
+    JSON.stringify(body),
+  );
   const streamId =
     new URL(request.url).searchParams.get("stream_id") ?? body?.stream_id;
   const status: string | undefined = body?.status;
