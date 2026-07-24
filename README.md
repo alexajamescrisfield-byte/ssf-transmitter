@@ -42,20 +42,25 @@ keeping up. Your deployment only affects your own demos.
    - `NEXT_PUBLIC_APP_URL` — leave unset. Vercel provides its own production
      URL automatically and the app detects it (`VERCEL_PROJECT_PRODUCTION_URL`).
      Only set this manually if you're using a custom domain.
-4. Deploy. The build runs `prisma migrate deploy` automatically, so your
-   Supabase database gets the schema applied on first deploy.
+4. Deploy.
 
-### 3. Run the migration once, manually, if you didn't deploy via Vercel yet
+**Important:** the Vercel build does *not* run migrations automatically --
+`prisma migrate deploy` needs a persistent connection the Transaction pooler
+doesn't support, and running it on every build hangs the deploy. Apply
+migrations as a separate, manual, one-time step (below) before or after
+your first deploy.
 
-If you want to test locally before deploying, or the automatic migration on
-first deploy doesn't run for some reason:
+### 3. Apply the database schema (run this once, and again after any future schema change)
+
+This must be run from your own machine, not as part of the Vercel build:
 
 ```bash
-# .env: set DATABASE_URL to Supabase's SESSION pooler (port 5432) --
+# .env: temporarily set DATABASE_URL to Supabase's SESSION pooler (port 5432) --
 # migrations need a persistent connection the Transaction pooler doesn't
-# support. Switch back to the Transaction pooler (6543) afterward for
-# normal app use.
-npx prisma migrate deploy
+# support.
+npm run migrate
+# then switch DATABASE_URL back to the Transaction pooler (6543) for normal
+# app use / for Vercel's env var.
 ```
 
 ### 4. Provision your first tenant
