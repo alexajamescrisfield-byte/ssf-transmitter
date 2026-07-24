@@ -90,6 +90,7 @@ export async function sendSsfSignal({
       kid: tenant.signingKey.kid,
     })
     .setIssuer(tenantIssuer(tenant.slug))
+    .setAudience(tenantIssuer(tenant.slug))
     .setJti(jti)
     .setIssuedAt()
     .sign(privateKey);
@@ -163,6 +164,13 @@ export async function sendVerificationSet({
 
   const events = {
     "https://schemas.openid.net/secevent/ssf/event-type/verification": {
+      // ISC requires a subject claim on every event, even the verification
+      // handshake -- it's not tied to a real identity, just a placeholder
+      // matching the receiver's configured subject format (email).
+      subject: {
+        format: "email",
+        email: `verification@${tenant.slug}.ssf-transmitter`,
+      },
       ...(state ? { state } : {}),
     },
   };
@@ -174,6 +182,7 @@ export async function sendVerificationSet({
       kid: tenant.signingKey.kid,
     })
     .setIssuer(tenantIssuer(tenant.slug))
+    .setAudience(tenantIssuer(tenant.slug))
     .setJti(jti)
     .setIssuedAt()
     .sign(privateKey);
