@@ -1,6 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { requireTenantByBearerToken } from "@/lib/auth";
-import { sendVerificationSet } from "@/lib/ssf";
+import { sendVerificationSet, tenantIssuer } from "@/lib/ssf";
+import { prisma } from "@/lib/prisma";
 
 // POST /t/{slug}/ssf/verify
 // ISC calls this to request connection verification. We accept the request
@@ -23,11 +24,24 @@ export async function POST(
     return NextResponse.json({ error: "Missing stream_id" }, { status: 400 });
   }
 
-  // ISC's verify call itself just needs a bare success acknowledgment, not
-  // the send result -- the real verification happens when ISC receives the
-  // pushed SET at its delivery endpoint. `after()` ensures the send
-  // actually completes even though we've already returned the response
-  // (a bare fire-and-forget call can get killed mid-flight on Vercel).
+  const stream = await prisma.stream.findFirst({
+    where: { id: streamId, tenantId: tenant.id },
+  });
+  if (!stream) {
+    return NextResponse.json({ error: "Unknown stream_id" }, { status: 404 });
+  }
+
+  // `after()` ensures the async SET push actually completes even though
+  // we've already returned this response (fire-and-forget without it can
+  // get killed mid-flight on Vercel). The real verification happens when
+  // ISC receives that pushed SET at its delivery endpoint -- this response
+  // just needs to echo back stream identity (iss/aud), same convention
+  // ISC validates on every other endpoint in this same workflow.
   after(() => sendVerificationSet({ tenantSlug: slug, streamId, state }));
-  return new NextResponse(null, { status: 200 });
+  return NextResponse.json({
+    stream_id: stream.id,
+    iss: tenantIssuer(tenant.slug),
+    aud: tenantIssuer(tenant.slug),
+    status: stream.status,
+  });
 }
