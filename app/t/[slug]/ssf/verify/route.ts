@@ -43,5 +43,8 @@ export async function POST(
   // get killed mid-flight on Vercel). The real verification happens when
   // ISC receives that pushed SET at its delivery endpoint.
   after(() => sendVerificationSet({ tenantSlug: slug, streamId, state }));
-  return new NextResponse(null, { status: 202 });
+  // Echo back stream_id + the same `state` the receiver sent, per the
+  // spec's stated purpose for `state` (correlating a verify request with
+  // its response).
+  return NextResponse.json({ stream_id: streamId, state });
 }
