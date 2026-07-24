@@ -1,6 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { requireTenantByBearerToken } from "@/lib/auth";
-import { sendVerificationSet } from "@/lib/ssf";
+import { sendVerificationSet, tenantIssuer } from "@/lib/ssf";
 import { prisma } from "@/lib/prisma";
 
 // POST /t/{slug}/ssf/verify
@@ -43,8 +43,20 @@ export async function POST(
   // get killed mid-flight on Vercel). The real verification happens when
   // ISC receives that pushed SET at its delivery endpoint.
   after(() => sendVerificationSet({ tenantSlug: slug, streamId, state }));
-  // Echo back stream_id + the same `state` the receiver sent, per the
-  // spec's stated purpose for `state` (correlating a verify request with
-  // its response).
-  return NextResponse.json({ stream_id: streamId, state });
+  // Return the full stream representation, matching the same shape that
+  // already satisfies ISC's validator on the streams/status endpoints --
+  // the minimal {stream_id, state} response was rejected every time.
+  return NextResponse.json({
+    stream_id: stream.id,
+    iss: tenantIssuer(tenant.slug),
+    aud: tenantIssuer(tenant.slug),
+    status: stream.status,
+    events_requested: JSON.parse(stream.eventsRequested),
+    events_delivered: JSON.parse(stream.eventsRequested),
+    delivery: {
+      method: "urn:ietf:rfc:8935",
+      endpoint_url: stream.deliveryEndpointUrl,
+    },
+    state,
+  });
 }
