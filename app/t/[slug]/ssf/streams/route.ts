@@ -65,8 +65,11 @@ export async function POST(
 }
 
 // PATCH /t/{slug}/ssf/streams?stream_id=... (or stream_id in the JSON body)
-// ISC's "enable/pause/disable stream" action calls this directly, rather
-// than POST /ssf/status -- accept both so either receiver convention works.
+// ISC periodically re-submits the FULL stream configuration here (delivery,
+// events_requested, etc.) as a refresh/re-confirmation -- it does NOT send
+// a `status` field. Update whichever fields are present and echo back the
+// current representation, including status (which this call never changes;
+// only POST /ssf/status changes status).
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ slug: string }> },
@@ -78,22 +81,11 @@ export async function PATCH(
   }
 
   const body = await request.json().catch(() => ({}));
-  // TEMP diagnostic logging -- remove once we confirm ISC's actual PATCH
-  // request shape from Vercel Runtime Logs.
-  console.log(
-    "[ssf/streams PATCH] query=%s body=%s",
-    request.url,
-    JSON.stringify(body),
-  );
   const streamId =
     new URL(request.url).searchParams.get("stream_id") ?? body?.stream_id;
-  const status: string | undefined = body?.status;
 
-  if (!streamId || !["enabled", "paused", "disabled"].includes(status ?? "")) {
-    return NextResponse.json(
-      { error: "Requires stream_id and status in {enabled,paused,disabled}" },
-      { status: 400 },
-    );
+  if (!streamId) {
+    return NextResponse.json({ error: "Missing stream_id" }, { status: 400 });
   }
 
   const stream = await prisma.stream.findFirst({
@@ -103,12 +95,33 @@ export async function PATCH(
     return NextResponse.json({ error: "Unknown stream_id" }, { status: 404 });
   }
 
+  const endpointUrl: string | undefined =
+    body?.delivery?.endpoint_url ?? undefined;
+  const requestedTypes: string[] | undefined = Array.isArray(
+    body?.events_requested,
+  )
+    ? body.events_requested
+    : undefined;
+
   const updated = await prisma.stream.update({
     where: { id: stream.id },
-    data: { status: status as "enabled" | "paused" | "disabled" },
+    data: {
+      ...(endpointUrl ? { deliveryEndpointUrl: endpointUrl } : {}),
+      ...(requestedTypes ? { eventsRequested: JSON.stringify(requestedTypes) } : {}),
+    },
   });
 
-  return NextResponse.json({ stream_id: updated.id, status: updated.status });
+  return NextResponse.json({
+    stream_id: updated.id,
+    iss: tenantIssuer(tenant.slug),
+    status: updated.status,
+    events_requested: JSON.parse(updated.eventsRequested),
+    events_delivered: JSON.parse(updated.eventsRequested),
+    delivery: {
+      method: "urn:ietf:rfc:8935",
+      endpoint_url: updated.deliveryEndpointUrl,
+    },
+  });
 }
 
 // GET /t/{slug}/ssf/streams
