@@ -52,6 +52,7 @@ export async function POST(
       stream_id: stream.id,
       iss: tenantIssuer(tenant.slug),
       aud: body?.aud ?? tenantIssuer(tenant.slug),
+      status: stream.status,
       events_requested: requestedTypes,
       events_delivered: requestedTypes,
       delivery: {
@@ -64,7 +65,9 @@ export async function POST(
 }
 
 // GET /t/{slug}/ssf/streams
-// Lets ISC (or us, for debugging) list streams already registered.
+// Lets ISC (or us, for debugging) list streams, or fetch one by ?stream_id=
+// (some receivers poll a single stream's status this way rather than
+// re-listing all of them).
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ slug: string }> },
@@ -75,19 +78,31 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const streamId = new URL(request.url).searchParams.get("stream_id");
+
+  const shape = (s: { id: string; status: string; eventsRequested: string; deliveryEndpointUrl: string }) => ({
+    stream_id: s.id,
+    status: s.status,
+    events_requested: JSON.parse(s.eventsRequested),
+    delivery: {
+      method: "urn:ietf:rfc:8935",
+      endpoint_url: s.deliveryEndpointUrl,
+    },
+  });
+
+  if (streamId) {
+    const stream = await prisma.stream.findFirst({
+      where: { id: streamId, tenantId: tenant.id },
+    });
+    if (!stream) {
+      return NextResponse.json({ error: "Unknown stream_id" }, { status: 404 });
+    }
+    return NextResponse.json(shape(stream));
+  }
+
   const streams = await prisma.stream.findMany({
     where: { tenantId: tenant.id },
   });
 
-  return NextResponse.json({
-    streams: streams.map((s) => ({
-      stream_id: s.id,
-      status: s.status,
-      events_requested: JSON.parse(s.eventsRequested),
-      delivery: {
-        method: "urn:ietf:rfc:8935",
-        endpoint_url: s.deliveryEndpointUrl,
-      },
-    })),
-  });
+  return NextResponse.json({ streams: streams.map(shape) });
 }
