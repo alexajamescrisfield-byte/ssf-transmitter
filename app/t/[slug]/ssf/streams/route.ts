@@ -114,6 +114,7 @@ export async function PATCH(
   return NextResponse.json({
     stream_id: updated.id,
     iss: tenantIssuer(tenant.slug),
+    aud: body?.aud ?? tenantIssuer(tenant.slug),
     status: updated.status,
     events_requested: JSON.parse(updated.eventsRequested),
     events_delivered: JSON.parse(updated.eventsRequested),
@@ -142,8 +143,11 @@ export async function GET(
 
   const shape = (s: { id: string; status: string; eventsRequested: string; deliveryEndpointUrl: string }) => ({
     stream_id: s.id,
+    iss: tenantIssuer(tenant.slug),
+    aud: tenantIssuer(tenant.slug),
     status: s.status,
     events_requested: JSON.parse(s.eventsRequested),
+    events_delivered: JSON.parse(s.eventsRequested),
     delivery: {
       method: "urn:ietf:rfc:8935",
       endpoint_url: s.deliveryEndpointUrl,
