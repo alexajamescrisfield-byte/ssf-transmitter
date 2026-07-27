@@ -84,6 +84,34 @@ Section 2's "Phase 0 gate: PROVEN" framing alone — that refers to the
 definition of done in the source document. See Sections 7 and 9 for exactly
 what's left.
 
+### 2.2 Is Phase 0/1 broken, or is this just Phase 2/3 not started yet?
+
+Read this before concluding anything above needs to be "fixed" or
+"gone back to." The distinction matters and is easy to blur:
+
+- **Phase 0 is essentially complete and working, not broken.** 4 of its 5
+  gate criteria (Section 2.1's source list) are done. The 1 remaining item
+  (Pass Verify Connection) is not something done wrong — it's externally
+  blocked on SailPoint's own connector behavior, already root-caused as
+  far as possible, and handed off as a support case (Section 7, item 1).
+  That is "waiting on an external answer," not "go back and fix our own
+  work."
+- **Phase 1 is essentially complete, with exactly one legitimate small
+  gap:** the automated integration test harness (Section 7, item 9;
+  Section 9.1, backlog item 8). Everything else in Phase 1's scope (stream
+  status gating, preferring the registered delivery URL) is done and
+  correct in the shipped code.
+- **Everything else the audit surfaced — the event-model/catalog design,
+  the entire Simulator UI, all of Phase 3 — is *not* a Phase 0/1 mistake.**
+  It is Phase 2 and Phase 3 scope that correctly has not been started yet,
+  per the source doc's own explicit sequencing: *"3) SE experience (demo
+  UX only — after protocol works)."* Protocol was built first, proven
+  working, and the UI/catalog/org-scale work comes next by design — this
+  session simply hadn't documented that pending work in writing until the
+  audit prompted it. **The audit found a documentation gap, not an
+  implementation gap**, with the one exception of the test harness noted
+  above.
+
 ---
 
 ## 3. Completed Work
