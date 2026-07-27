@@ -64,6 +64,26 @@ SailPoint support case is drafted but not yet submitted.
 command-line scripts run by the developer, not by an SE clicking buttons.
 That's Phase 2 work, not started.
 
+### 2.1 "Definition of Done" — status against `How to Build the SSF Transmitter.md`
+
+That source document defines exactly what "done" means for this project.
+Checking each criterion honestly, **this project is not yet complete**:
+
+| Definition-of-done criterion | Status |
+|---|---|
+| Provision a tenant in the portal | **Partial** — a tenant can be provisioned, but only via a CLI script (`scripts/provision-tenant.ts`), not "in the portal," because no portal exists yet |
+| Wire SailPoint ISC via Discovery URL + API token | **Done** |
+| Pass Verify Connection | **NOT done** — this is the unresolved `/ssf/verify` issue (Section 7, item 1). The source doc lists this as the literal #1 item in its "Suggested backlog (ordered)" |
+| Send at least 3 CAEP types from realistic vendor stories | **NOT done** — only 1 of the 5 supported CAEP types (`risk-level-change`) has been tested end-to-end. The doc's bar is at least 3 |
+| Show a Workflow remediation in ISC | **Done** — PRISM account disable, confirmed live |
+
+**Bottom line: 2 of 5 definition-of-done criteria are fully met, 1 is
+partial, 2 are not done.** Do not treat this project as complete based on
+Section 2's "Phase 0 gate: PROVEN" framing alone — that refers to the
+*protocol* working, which is necessary but not sufficient for the actual
+definition of done in the source document. See Sections 7 and 9 for exactly
+what's left.
+
 ---
 
 ## 3. Completed Work
@@ -282,6 +302,19 @@ noted.
 
 ## 5. Decisions Made
 
+- **Built greenfield instead of "productizing the existing SSF Signal
+  Portal."** `How to Build the SSF Transmitter.md` explicitly recommends
+  reusing an existing ~70%-complete app (`/Users/mgiblin/Projects/SSF
+  Project`, assessed separately in `SSF Portal vs PRD Goals Assessment
+  7.22.26.pdf`) rather than building new. **This session confirmed no
+  access to that repository exists on this machine or account** — searched
+  the full filesystem, found only assessment documents about it, not the
+  code itself. Greenfield was the only viable path given that constraint,
+  not a rejection of the source doc's recommendation. **If access to that
+  original repo is ever obtained, it should be evaluated before further
+  investment in this greenfield build**, since it may already solve
+  problems (e.g. the `/ssf/verify` issue in Section 7) that this build is
+  still working through from scratch.
 - **Hosted SaaS, not a desktop app.** Non-negotiable, per the architecture
   assessment — ISC cannot discover/verify a laptop-only process.
 - **Each SE deploys their own instance** (own free Vercel + own free
@@ -388,6 +421,30 @@ noted.
 7. **`scripts/test-send.ts` is hardcoded**, not parameterized via CLI args
    for tenant/subject/event type. Fine for continued manual testing, but
    should become real Simulator UI inputs in Phase 2.
+8. **No automated integration test harness exists.** `How to Build the SSF
+   Transmitter.md` lists this explicitly under both Phase 1 ("Integration
+   tests: discovery, stream create, verify SET, signed send") and the
+   ordered backlog (item 8). What exists instead is a set of manual,
+   developer-run diagnostic scripts (`scripts/check-*.ts`,
+   `list-streams.ts`) — useful, but not automated tests that run in CI or
+   catch a regression before it reaches production.
+9. **The companion Workflow is not packaged as an importable artifact.**
+   The source doc's Phase 2 scope and backlog (item 6, "Companion Workflow
+   pack — importable ISC Workflow JSON templates") calls for a
+   downloadable/importable JSON file another SE could bring into their own
+   ISC tenant. What exists instead is a live, manually-configured Workflow
+   inside the `company21912-poc` tenant only — built by hand, from a
+   template, following the steps in Section 10.4. Another SE cannot reuse
+   it without redoing those manual steps themselves (including the easy-to-
+   miss "enable it" step and the PRISM source-ID filter edit). **Exporting
+   this Workflow as JSON (ISC's Workflow builder has a download icon next
+   to "Workflow Details" — seen but not yet used in this session) and
+   committing it to `workflow/` in the repo is a concrete, fast win** that
+   directly closes this gap.
+10. **Source-doc backlog items not started at all:** "Preview = wire
+    payload" (no UI to preview anything in), "Identity picker" (no UI),
+    "Scheduler/demo queue" (no UI). All correctly deferred to Phase 2/the
+    Simulator UI — listed here only so they're not silently forgotten.
 
 ---
 
@@ -429,37 +486,47 @@ noted.
 
 ## 9. Exact Next Steps
 
-In recommended order:
+Immediate housekeeping first, then **explicitly mapped to `How to Build the
+SSF Transmitter.md`'s own "Suggested backlog (ordered)"**, since that
+document's priority order should govern what "next" means here rather than
+this session's improvised order.
+
+### 9.0 Immediate housekeeping (do first, takes minutes)
 
 1. **Re-enable Jayme Cannon's PRISM account** in ISC if it's still
    disabled (Accounts tab → "..." → Enable Account).
-2. **Submit the SailPoint support case** using
-   `docs/sailpoint-support-case-verify-endpoint.md` as-is, via SailPoint
-   Support or the Developer Community — don't spend more time guessing at
-   the `/ssf/verify` response shape without new information from
-   SailPoint.
-3. **Decide the fate of the original (v1) Receiver/Stream** in ISC — delete
+2. **Decide the fate of the original (v1) Receiver/Stream** in ISC — delete
    it, or leave it as a known-broken reference. It currently has an
    expired credential and cannot send signals.
-4. **Build and test a second companion Workflow** for `session-revoked` or
-   `credential-change` (SailPoint's most mature native CAEP templates per
-   their own release notes) to compare reliability against
-   `risk-level-change`.
-5. **Expand the source-ID filter** in the Disable Accounts step (or build
-   a second workflow branch) to include Active Directory, now that the
-   pattern for finding a source ID and writing the JSONPath filter is
-   documented (Section 3.8).
-6. **Write the full external onboarding guide** for other SEs — this
+
+### 9.1 Source doc's ordered backlog — status and next action on each
+
+| # | Backlog item (source doc's order) | Status | Next action |
+|---|---|---|---|
+| 1 | Verify gate — end-to-end ISC Receiver Verify Connection + one successful SET | **Blocked** | Submit the drafted support case (`docs/sailpoint-support-case-verify-endpoint.md`) to SailPoint Support/Developer Community. Stop guessing response shapes without new information. |
+| 2 | Stream status gating — never push to paused/disabled streams | **Done** | `sendSsfSignal()` in `lib/ssf.ts` already throws `StreamNotActiveError` for non-enabled streams. No action needed. |
+| 3 | Preview = wire payload — SE sees exactly what ISC receives | **Not started** | Blocked on the Simulator UI existing at all (Phase 2). |
+| 4 | Identity picker — saved demo subjects (email / `iss_sub`) | **Not started** | Same — Phase 2 UI work. |
+| 5 | Catalog expansion — PRD narratives mapped onto supported CAEP types | **Not started** | Only 1 of 25 target scenarios (ARD Section 6.1) has been built/tested. Directly blocks the "at least 3 CAEP types" definition-of-done criterion (Section 2.1) — recommend testing `session-revoked` and `credential-change` next specifically because SailPoint's own release notes call those two out as having the most mature native template support. |
+| 6 | Companion Workflow pack — importable ISC Workflow JSON templates | **Partial** | One Workflow exists, but only live inside `company21912-poc`, not exported. **Action: use the download icon next to "Workflow Details" in ISC's Workflow builder to export the current Workflow as JSON, commit it to a new `workflow/` folder in the repo.** This is the single fastest way to make today's work reusable by another SE. |
+| 7 | Scheduler / demo queue — countdown or multi-step script sends | **Not started** | Phase 2 UI work. |
+| 8 | Integration test harness — discovery, streams, verify, signed delivery | **Not started** | The `scripts/check-*.ts` files are manual diagnostics, not automated tests. Recommend converting the working manual test flow (Section 10.3) into a real test suite (e.g. Vitest/Jest) that can run in CI and catch regressions — especially for the token-rotation bug class (Section 3.5, item 12), which would have been caught immediately by an automated re-run of the signal-send flow. |
+
+### 9.2 Broader next steps beyond the backlog
+
+9. **Write the full external onboarding guide** for other SEs — this
    runbook plus the README are internal/technical; a polished, SE-facing
    step-by-step (screenshots, no jargon) is still needed, matching what
-   was promised earlier in this project.
-7. **Start Phase 2**: design and build the actual Simulator UI (vendor
-   dropdown, scenario picker, identity picker, Send Now button) so
-   sending a signal stops requiring a developer running a script from a
-   terminal.
-8. **Expand the vendor/payload catalog** beyond the single tested
-   CrowdStrike scenario, per the ARD's full 25-scenario scope (5 vendors ×
-   5 scenarios each), all still mapped onto the 5 supported CAEP types.
+   was promised earlier in this project. Once backlog item 6 (importable
+   Workflow JSON) is done, that guide gets meaningfully shorter and more
+   reliable — "import this file" beats "manually rebuild these 9 steps."
+10. **Start Phase 2 in earnest**: design and build the actual Simulator UI
+    (vendor dropdown, scenario picker, identity picker, Send Now button)
+    so sending a signal stops requiring a developer running a script from
+    a terminal. Backlog items 3, 4, and 7 above all live here.
+11. **Expand the vendor/payload catalog** beyond the single tested
+    CrowdStrike scenario, per the ARD's full 25-scenario scope (5 vendors ×
+    5 scenarios each), all still mapped onto the 5 supported CAEP types.
 
 ---
 
@@ -487,6 +554,23 @@ In recommended order:
    - https://documentation.sailpoint.com/saas/help/workflows/ (workflow
      action schemas, e.g. the `Get Accounts` action's output fields
      including `sourceId`)
+7. **Related artifacts named in `How to Build the SSF Transmitter.md`'s own
+   "Related artifacts" section** — listed here for completeness even where
+   this session did not have direct access to them:
+   - `PRD - Shared Signals Injector 7.22.26.docx` — the original PRD (this
+     session worked from a copy titled "Shipwright's Corner - Tack 1")
+   - `SSF Injector PRD Assessment - Go No-Go 7.22.26.pdf` — the Go/No-Go
+     decision record (not directly reviewed in this session; the
+     `How to Build...` doc summarizes its conclusion)
+   - `SSF Portal vs PRD Goals Assessment 7.22.26.pdf` — reviewed directly
+     in an earlier part of this session; assessed the (inaccessible)
+     existing SSF Signal Portal against the original PRD's goals
+   - `/Users/mgiblin/Projects/SSF Project` (SSF Signal Portal) — **the
+     pre-existing, ~70%-complete implementation this project was told to
+     productize instead of rebuilding. No access to this repository was
+     available in this session. Obtaining access to it should be a
+     priority for whoever picks this up next** — see the decision note in
+     Section 5.
 
 ### 10.2 How to recreate this environment from scratch
 
