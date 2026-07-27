@@ -102,12 +102,18 @@ export async function PATCH(
   )
     ? body.events_requested
     : undefined;
+  // ISC's token-rotation workflow refreshes this credential via PATCH --
+  // failing to capture it here means we keep using the original,
+  // eventually-expired authorization header forever.
+  const authorizationHeader: string | undefined =
+    body?.delivery?.authorization_header ?? undefined;
 
   const updated = await prisma.stream.update({
     where: { id: stream.id },
     data: {
       ...(endpointUrl ? { deliveryEndpointUrl: endpointUrl } : {}),
       ...(requestedTypes ? { eventsRequested: JSON.stringify(requestedTypes) } : {}),
+      ...(authorizationHeader ? { authorizationHeader } : {}),
     },
   });
 
