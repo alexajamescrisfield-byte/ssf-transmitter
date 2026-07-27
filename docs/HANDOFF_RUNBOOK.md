@@ -382,6 +382,37 @@ noted.
 - **No portal/Simulator UI exists.** Every signal sent in this project so
   far was triggered by a developer running `scripts/test-send.ts` from a
   terminal — not something an SE could do today without engineering help.
+- **If an SE ever pushes back and wants a "laptop-only" experience**, the
+  source doc has an explicit, named answer for this, and it is not "build
+  a local transmitter": *"the compromise is a thin local controller that
+  calls the hosted transmitter API — never a local-only transmitter."*
+  I.e., a small local app/CLI is an acceptable convenience layer that
+  calls the real hosted API over the internet; a transmitter that lives
+  only on a laptop is not acceptable under any circumstances, for the same
+  discoverability reason established in Section 1. This has not come up
+  again since the original PRD, but it's worth keeping as a fixed answer
+  if it does.
+
+### 6.1 What NOT to build (explicit guardrails from the source doc)
+
+Reproduced verbatim in intent, since these are exactly the mistakes the
+original (rejected) PRD made, and this project should not silently drift
+back toward them over time:
+
+- A Python desktop `.exe`/`.app` "SSF injector."
+- A direct POST to a fictional ISC "Shared Signals webhook" — no such
+  inbound endpoint exists; ISC only ever gives a transmitter an
+  `endpoint_url` after *it* creates a stream against the transmitter's own
+  discovery/management endpoints.
+- 25 first-class, custom SSF/CAEP event type URIs. There are only 5
+  supported types (Section 6), always. Vendor variety belongs in the
+  catalog's claim content, never in new event-type URIs.
+- Re-implementing identity correlation inside a custom Workflow. ISC
+  already does subject-to-identity correlation natively; do not duplicate
+  this logic anywhere in the transmitter or a Workflow.
+- Poll-based delivery or a full subject-management API, unless a specific
+  customer's Receiver actually requires it. Push delivery (what's built)
+  is the default and, so far, the only tested/needed mode.
 
 ---
 
@@ -411,40 +442,106 @@ noted.
    templates too (per the release notes pasted into this session) and are
    worth building/testing next, since they may prove more reliable/
    mature on SailPoint's side than `risk-level-change`.
-5. **No Simulator UI.** All testing is via `scripts/test-send.ts`, run
-   manually from a terminal by a developer. Not usable by an SE yet.
-6. **The original "Threat Signal Transmitter" Receiver/Stream (the first
+5. **The event/catalog data model specified in the source doc was never
+   implemented, and our actual Workflow design deviates from its intent.**
+   `How to Build the SSF Transmitter.md`'s "Event model" section specifies
+   a catalog schema for every vendor scenario:
+   `vendor`, `displayName`, `triggerCode`, `ssfEventType`, `defaultAction`,
+   and CAEP-required-claim defaults (a `caepRequiredClaims()`-style
+   builder). **We built the claim-builder half** (`lib/caep.ts`'s
+   `buildCaepEvent()` + `CAEP_REQUIRED_CLAIMS`), **but there is no catalog
+   data structure at all** — `scripts/test-send.ts` hardcodes one scenario
+   inline in code, not as a row in a reusable catalog.
+   More importantly: the source doc's design intends the payload to carry
+   `vendor_event_type` and **`recommended_action`** as custom claims
+   specifically so **one generic Workflow can branch on them** ("Ship 1-2
+   importable ISC Workflow templates that branch on CAEP type + vendor /
+   `recommended_action`" — Phase 2 scope, backlog item 6). **What we
+   actually built is the opposite of that**: our `vendor_context` claim
+   (`vendor`, `detection` — different field names than the spec's
+   `vendor_event_type`) is carried in the SET, but the Workflow we built
+   does not read it at all — it's hardcoded to always disable PRISM
+   regardless of vendor or scenario. This works for a single demo but does
+   **not** scale to "1-2 workflows branch across many vendor scenarios" as
+   intended. **This needs a design decision before Phase 2 catalog work
+   starts**: either (a) rename our claim to match the spec's
+   `recommended_action` and build real branching logic into the Workflow
+   (an ISC "Switch"/conditional step keyed on that claim), or (b)
+   deliberately keep one-workflow-per-scenario and document that as an
+   intentional deviation.
+6. **No Simulator UI, and no SE-facing surface of any kind.** The source
+   doc's "Minimum viable SE surface" (Section 3 of `How to Build...`) is
+   four pieces, and **all four are 100% unbuilt**:
+   - **Credentials** — ISC connection setup + Test Connection + copy
+     Discovery URL/API token. Currently: manual `.env` editing +
+     `provision-tenant` CLI script.
+   - **Simulator** — vendor → event → subject → Send Now. Currently:
+     manually editing `scripts/test-send.ts` and running it from a
+     terminal.
+   - **History** — success/fail + raw result. Currently:
+     `scripts/check-audit.ts`, a CLI diagnostic only.
+   - **Admin catalog** — add/edit vendor scenarios without redeploying.
+     Currently: does not exist; would require code changes and a redeploy
+     to add a scenario today.
+   Nice-to-haves named in the same section, also all unbuilt: saved demo
+   identities/picker, countdown/queued sends, companion Workflow JSON
+   templates (see item 9 below), and preview-matches-wire-payload.
+   **This is the single largest gap in the project relative to its stated
+   purpose** ("lets Solutions Engineers inject..." — not developers).
+7. **The original "Threat Signal Transmitter" Receiver/Stream (the first
    one created, before "v2") still exists in ISC with a permanently
    expired authorization credential.** It was not deleted — only a second,
    working one ("Threat Signal Transmitter v2") was created alongside it.
    Decide whether to delete the stale one or leave it as a reference.
-7. **`scripts/test-send.ts` is hardcoded**, not parameterized via CLI args
+8. **`scripts/test-send.ts` is hardcoded**, not parameterized via CLI args
    for tenant/subject/event type. Fine for continued manual testing, but
    should become real Simulator UI inputs in Phase 2.
-8. **No automated integration test harness exists.** `How to Build the SSF
+9. **No automated integration test harness exists.** `How to Build the SSF
    Transmitter.md` lists this explicitly under both Phase 1 ("Integration
    tests: discovery, stream create, verify SET, signed send") and the
    ordered backlog (item 8). What exists instead is a set of manual,
    developer-run diagnostic scripts (`scripts/check-*.ts`,
    `list-streams.ts`) — useful, but not automated tests that run in CI or
    catch a regression before it reaches production.
-9. **The companion Workflow is not packaged as an importable artifact.**
-   The source doc's Phase 2 scope and backlog (item 6, "Companion Workflow
-   pack — importable ISC Workflow JSON templates") calls for a
-   downloadable/importable JSON file another SE could bring into their own
-   ISC tenant. What exists instead is a live, manually-configured Workflow
-   inside the `company21912-poc` tenant only — built by hand, from a
-   template, following the steps in Section 10.4. Another SE cannot reuse
-   it without redoing those manual steps themselves (including the easy-to-
-   miss "enable it" step and the PRISM source-ID filter edit). **Exporting
-   this Workflow as JSON (ISC's Workflow builder has a download icon next
-   to "Workflow Details" — seen but not yet used in this session) and
-   committing it to `workflow/` in the repo is a concrete, fast win** that
-   directly closes this gap.
-10. **Source-doc backlog items not started at all:** "Preview = wire
+10. **The companion Workflow is not packaged as an importable artifact.**
+    The source doc's Phase 2 scope and backlog (item 6, "Companion Workflow
+    pack — importable ISC Workflow JSON templates") calls for a
+    downloadable/importable JSON file another SE could bring into their own
+    ISC tenant. What exists instead is a live, manually-configured Workflow
+    inside the `company21912-poc` tenant only — built by hand, from a
+    template, following the steps in Section 10.4. Another SE cannot reuse
+    it without redoing those manual steps themselves (including the easy-to-
+    miss "enable it" step and the PRISM source-ID filter edit). **Exporting
+    this Workflow as JSON (ISC's Workflow builder has a download icon next
+    to "Workflow Details" — seen but not yet used in this session) and
+    committing it to `workflow/` in the repo is a concrete, fast win** that
+    directly closes this gap.
+11. **Source-doc backlog items not started at all:** "Preview = wire
     payload" (no UI to preview anything in), "Identity picker" (no UI),
     "Scheduler/demo queue" (no UI). All correctly deferred to Phase 2/the
     Simulator UI — listed here only so they're not silently forgotten.
+12. **Phase 3 ("SE org scale") is entirely unaddressed.** The source doc
+    names four specific requirements for this phase: multi-tenant
+    isolation (partially exists — the `Tenant`/`Stream` schema is
+    multi-tenant-shaped, but never tested with a second real tenant),
+    **vault-backed secrets** (not done — see Section 8, signing keys are
+    plaintext in Postgres), **admin analytics** (not started, no UI to
+    have analytics in), and **MFA** (not started — no SE login system
+    exists at all yet, so there's nothing to add MFA to). None of these
+    are urgent for a single-tenant proof of concept, but all four should
+    be treated as blockers before this becomes "official" org-wide
+    tooling per the source doc's own phasing.
+13. **Two named stack pieces from the source doc were never adopted:**
+    - **Supabase *Vault*** for secrets — the source doc specifies this
+      explicitly in its stack table. We used plain Supabase *Postgres*
+      for the signing key instead (see Section 8's risk note). These are
+      different Supabase products; only the database was used, not the
+      vault.
+    - **Supabase *Auth*** (+ optional TOTP MFA) for SE portal login — not
+      implemented, because no portal exists to log into yet. This is the
+      mechanism the source doc specifies for "SE org access without a
+      home-rolled password store" — worth adopting from the start once
+      the Simulator UI work begins, rather than retrofitting auth later.
 
 ---
 
@@ -514,19 +611,37 @@ this session's improvised order.
 
 ### 9.2 Broader next steps beyond the backlog
 
-9. **Write the full external onboarding guide** for other SEs — this
-   runbook plus the README are internal/technical; a polished, SE-facing
-   step-by-step (screenshots, no jargon) is still needed, matching what
-   was promised earlier in this project. Once backlog item 6 (importable
-   Workflow JSON) is done, that guide gets meaningfully shorter and more
-   reliable — "import this file" beats "manually rebuild these 9 steps."
+As of the end of this session, **the highest-priority item is the Simulator
+UI (item 10 below)** — re-confirmed directly with the user, because every
+other gap (more CAEP types, more Workflows) only deepens the *backend*,
+while zero of it is usable by an actual SE until some UI exists. Don't
+default back to backend-only work without re-checking this priority call.
+
+9. **Before or alongside starting the UI, make the event-model design
+   decision flagged in Section 7, item 5**: does the vendor catalog carry
+   a `recommended_action` claim that a single Workflow branches on
+   (matching the source doc's intent), or does this project intentionally
+   stay one-Workflow-per-scenario? This decision shapes both the Admin
+   Catalog UI's data model and how many Workflows need to be built/
+   exported. Answering it *before* building the catalog UI avoids
+   redesigning the schema mid-build.
 10. **Start Phase 2 in earnest**: design and build the actual Simulator UI
     (vendor dropdown, scenario picker, identity picker, Send Now button)
     so sending a signal stops requiring a developer running a script from
-    a terminal. Backlog items 3, 4, and 7 above all live here.
-11. **Expand the vendor/payload catalog** beyond the single tested
+    a terminal. Backlog items 3, 4, and 7 (Section 9.1) all live here,
+    along with the full "minimum viable SE surface" spec in Section 7,
+    item 6 (Credentials / Simulator / History / Admin catalog).
+11. **Write the full external onboarding guide** for other SEs — this
+    runbook plus the README are internal/technical; a polished, SE-facing
+    step-by-step (screenshots, no jargon) is still needed, matching what
+    was promised earlier in this project. Once backlog item 6 (importable
+    Workflow JSON) is done, that guide gets meaningfully shorter and more
+    reliable — "import this file" beats "manually rebuild these 9 steps."
+12. **Expand the vendor/payload catalog** beyond the single tested
     CrowdStrike scenario, per the ARD's full 25-scenario scope (5 vendors ×
     5 scenarios each), all still mapped onto the 5 supported CAEP types.
+    This naturally follows from, and should reuse, the catalog data model
+    decided in item 9.
 
 ---
 
