@@ -1,8 +1,9 @@
 # Threat Signal Transmitter (TST) — Handoff Runbook
 
 **Date of this handoff:** 2026-07-27 (last substantively updated
-2026-07-29 — see Section 3.14 for the token-claims-change fix that closed
-Definition of Done criterion 4)
+2026-07-29 — see Section 3.18 for the Simulator UI build, the first real
+SE-facing surface this project has ever had, plus the device-compliance-change
+Workflow's new PRISM+AD scope and reverse-direction re-enable branch)
 **Repo:** https://github.com/alexajamescrisfield-byte/ssf-transmitter (Public)
 **Live deployment:** https://ssf-transmitter-chi.vercel.app
 **ISC tenant used for testing:** `company21912-poc` (admin console: https://company21912-poc.identitynow-demo.com/)
@@ -66,9 +67,19 @@ still fails (see Section 7). This does **not** block real signal delivery —
 proven working regardless — but it's an unresolved rough edge, and a
 SailPoint support case is drafted but not yet submitted.
 
-**No SE-facing UI exists yet.** All testing so far has been done via
-command-line scripts run by the developer, not by an SE clicking buttons.
-That's Phase 2 work, not started.
+**UPDATE 2026-07-29 (later in the day): a real SE-facing UI now exists.**
+See Section 3.18 — a Simulator/History/Credentials UI is built, deployed to
+production, and proven end-to-end (real send → correlate → Workflow fire →
+account state change) both locally and on the live Vercel deployment. This
+was the single largest gap in the project relative to its stated purpose
+("lets Solutions Engineers inject...", not developers running scripts) --
+it is now closed. The paragraph below describes the state as of earlier in
+the day, before this UI existed; kept for historical accuracy of how the
+day progressed, not because it's still true.
+
+**No SE-facing UI exists yet [as of early 2026-07-29].** All testing so far
+has been done via command-line scripts run by the developer, not by an SE
+clicking buttons. That's Phase 2 work, not started.
 
 ### 2.1 "Definition of Done" — status against `How to Build the SSF Transmitter.md`
 
@@ -818,6 +829,153 @@ closing what was the last real gap:
   and `scripts/list-campaigns.ts` after each test; PRISM+AD restored
   afterward via `scripts/enable-prism-and-ad.ts`.
 
+### 3.18 Simulator UI built, deployed, and proven end-to-end (2026-07-29, later session)
+
+**The single largest gap in this project -- no SE-facing UI, Section 7 item
+6 -- is closed.** A design prompt was written
+(`docs/SIMULATOR_UI_DESIGN_PROMPT.md`), run through Claude Design to produce
+a visual/interaction prototype, then implemented for real: three Next.js
+pages plus one API route, wired directly to the already-proven backend
+(`sendSsfSignal()`, `AuditLog`) with no mocks and no simulated data anywhere.
+
+**Pages built:**
+- **Simulator** (`app/page.tsx`) -- vendor grid (5 vendors) -> event
+  dropdown (15 scenarios) -> subject email -> live JSON payload preview ->
+  Send button -> real HTTP result. Deliberately scoped down from the
+  Claude Design reference (which modeled a teammate's fuller, 8+-vendor
+  multi-tenant portal) to exactly this project's 5 vendors/15
+  scenarios/3 pages -- see the design doc's "What NOT to include" section.
+- **History** (`app/history/page.tsx`) -- server component reading
+  `AuditLog` directly, most recent first.
+- **Credentials** (`app/credentials/page.tsx` +
+  `components/CredentialsPanel.tsx`) -- read-only Discovery URL + API
+  token display with Show/Copy, matching exactly what Section 10.3 asks an
+  SE to paste into ISC -- nothing else (no OAuth-client-secret storage
+  form, which the reference portal has but which would mean *this* app
+  holding another tenant's ISC write credentials -- rejected per the same
+  credential-boundary reasoning as Section 3.16).
+- **`app/api/simulate/route.ts`** -- the only new backend surface: takes
+  `{scenarioKey, subjectEmail}`, resolves the tenant's newest `enabled`
+  stream (`lib/streams.ts`), calls `sendSsfSignal()`. Nothing here
+  duplicates or re-implements signing/correlation logic.
+
+**Schema change**: `AuditLog.scenarioKey` (nullable) added so History can
+show the real vendor/event name instead of just the CAEP type. Migration
+`20260729120000_add_audit_log_scenario_key`. Existing pre-UI audit rows
+(from CLI script testing) correctly show `—` for vendor since they predate
+this column -- not a bug.
+
+**Real bug found and fixed: wrong environment variable broke every
+UI-triggered send.** `.env`'s `NEXT_PUBLIC_APP_URL` was set to
+`http://localhost:3000` for local browsing convenience, but that same
+value gets baked into every signed token's `iss`/`aud` claims (via
+`tenantIssuer()`/`appBaseUrl()` in `lib/ssf.ts`). ISC's Receiver only
+trusts tokens whose issuer matches its registered Discovery URL
+(`https://ssf-transmitter-chi.vercel.app`), so every send from the locally
+running dev server was silently failing ISC's audience check --
+delivery still returned HTTP 202 (accepted), but nothing ever correlated
+or fired a Workflow. This is exactly why old CLI test scripts always
+worked: Section 10.3 step 8 has always documented overriding
+`NEXT_PUBLIC_APP_URL` inline on the command line for real sends, so the
+long-running dev server's `.env` value was never actually exercised
+against a real ISC round-trip until today. **Fix**: set
+`NEXT_PUBLIC_APP_URL` in `.env` to the real deployed URL even for local
+dev -- ISC never talks to localhost in this flow at all, so there's no
+reason for the two to differ. Confirmed fixed via a real re-test
+(signal -> correlated -> Workflow fired -> PRISM disabled, ~17s).
+
+**Prisma 7 migration-connection split fixed as a side effect of debugging
+this.** The project had one `DATABASE_URL` read by two different code
+paths that happened to share a name: `lib/prisma.ts` (real app runtime,
+via `@prisma/adapter-pg`) and `prisma.config.ts` (Prisma CLI --
+migrate/generate). Prisma 7 removed the old `directUrl` schema.prisma
+field entirely; the CLI-only connection is now whatever `prisma.config.ts`
+points at, independent of the app's own runtime connection. Added a
+second env var, `DIRECT_URL` (Supabase Session pooler, port 5432,
+matching Prisma's own documented Supabase-integration convention),
+read only by `prisma.config.ts`. `DATABASE_URL` (Transaction pooler, port
+6543) also got `?pgbouncer=true` appended, per current Prisma+Supabase
+guidance for driver-adapter runtime connections -- confirmed via Prisma's
+own docs, not assumed. Both changes verified independently (each didn't
+break the other) before combining them. **Both variables must also exist
+in Vercel's own Environment Variables** (separate from local `.env`) --
+added there too, confirmed via a successful production build.
+
+**Verified working for real, not just claimed**: 4 of the 5 CAEP types in
+the catalog were each sent for real through the fixed UI (one scenario per
+type) after the `NEXT_PUBLIC_APP_URL` fix, plus the one scenario that's
+supposed to *not* fire:
+- CrowdStrike Host Isolated (`risk-level-change`) -> PRISM disabled
+- Jamf Device Non-Compliant (`device-compliance-change`) -> PRISM (+AD,
+  see below) disabled
+- Okta Credential Reset (`credential-change`) -> PRISM+AD disabled,
+  certification campaign created
+- Microsoft Session Hijack Detected (`session-revoked`) -> PRISM+AD
+  disabled, certification campaign created
+- Jamf Device Returned to Compliance (reverse direction) -> correctly did
+  not fire (before the change below), then correctly DID fire and
+  re-enabled accounts (after it)
+
+**`device-compliance-change` Workflow scope expanded, at user request,
+during this same session:**
+1. **Disable action now covers PRISM + Active Directory**, not PRISM-only
+   (`scripts/update-device-compliance-workflow.ts`) -- matching the
+   broader scope already used by the credential-change/session-revoked
+   Workflows.
+2. **New capability: the reverse-direction scenario ("Device Returned to
+   Compliance") now does something real** -- it re-enables PRISM+AD --
+   instead of silently correlating and doing nothing. Built as a `choice`
+   step branching on the event's `current_status` claim: `not-compliant`
+   -> Disable Accounts, anything else (`compliant`) -> Enable Accounts
+   (defaultStep). **This works, where an earlier attempt at Workflow
+   branching in this project (Section 7 item 5) did not, because
+   `current_status`/`previous_status` are OFFICIAL, required CAEP claims
+   for this event type** (`lib/caep.ts`'s `CAEP_REQUIRED_CLAIMS`) -- ISC
+   never strips these, unlike the custom `vendor`/`recommended_action`
+   fields that Section 7 item 5 proved get stripped before a Workflow ever
+   sees them. Branching on an event type's own required schema field is a
+   genuinely different, viable case from branching on custom claims across
+   vendors.
+3. Widened the trigger's `filter.$` to match both `current_status` values
+   (was `not-compliant`-only), since the choice step now needs both
+   directions to actually reach the Workflow at all.
+4. Verified end-to-end for both directions. The re-enable direction took
+   unusually long (~4 minutes, vs. ~10-20s for every other test this
+   project has run) the one time it was tested -- likely because the
+   disable and enable actions were fired on the same PRISM/AD accounts
+   only ~20 seconds apart, and the connector needed several backoff
+   retries (`"account status check still pending"`) to converge. Not a
+   bug in the Workflow logic (which routed correctly on the first try,
+   confirmed via `GET /beta/workflow-executions/{id}/history`) -- worth
+   knowing if a future test of this same reverse-direction scenario is run
+   again shortly after its opposite.
+5. `lib/remediation.ts` (the canonical CAEP-type -> Workflow/action text
+   the Simulator UI displays) updated to match: `device-compliance-change`
+   now says "Disable access to the PRISM application and Active
+   Directory," and a new per-scenario override
+   (`SCENARIO_ACTION_OVERRIDE`) gives "Device Returned to Compliance" its
+   own distinct text ("Re-enable access to the PRISM application and
+   Active Directory") instead of the old "(correctly does not fire)"
+   note, which is no longer true.
+
+**Deployed to production and re-verified there independently** -- not
+assumed to behave the same as local just because it's the same database.
+Committed (`e510a80`) and pushed to `main`, which triggered a real Vercel
+deployment. After the two env vars above were added to Vercel's own
+project settings and the deployment redeployed, a real signal was sent
+directly against the **production** `/api/simulate` endpoint (`curl`, not
+just page-load checks) and confirmed to correlate, fire the Workflow, and
+disable PRISM in ~9 seconds -- proving the fix and the deployment both
+work from the actual deployed instance, not only the local dev server.
+
+**Also fixed**: the browser-automation tool used to click through the UI
+during this session had an intermittent issue where `left_click` on the
+"Send signal" button sometimes didn't register (no request fired, no
+error either) -- worked around each time by re-reading the page and
+retrying, or by calling `/api/simulate` directly via `curl` for the
+production verification. Not an application bug; nothing in the app's own
+code was changed because of this.
+
 ---
 
 ## 4. Files Created or Modified
@@ -882,6 +1040,20 @@ noted.
 | `docs/How to Build the SSF Transmitter.md` | Copied in from the original architecture doc for onboarding context |
 | `docs/sailpoint-support-case-verify-endpoint.md` | Drafted, evidence-backed support case for the unresolved `/ssf/verify` issue — **not yet submitted to SailPoint** |
 | `docs/HANDOFF_RUNBOOK.md` | This document |
+| `docs/SIMULATOR_UI_DESIGN_PROMPT.md` | The Simulator UI's design spec (Section 3.18) — vendor/scenario matrix, what to build vs. explicitly not build, saved this time so it doesn't get lost like last session's verbal-only prompt did |
+| `app/page.tsx` | The Simulator page (client component) — vendor/event/subject form, live JSON preview, Send button |
+| `app/history/page.tsx` | The History page (server component) — reads `AuditLog` directly, no client fetch needed |
+| `app/credentials/page.tsx` + `components/CredentialsPanel.tsx` | The Credentials page — server component resolves the tenant's real discovery URL/token, client component handles Show/Copy interactivity |
+| `app/api/simulate/route.ts` | The only new backend surface — `{scenarioKey, subjectEmail}` → resolves the tenant's newest enabled stream → `sendSsfSignal()` |
+| `components/PortalShell.tsx` | Shared sidebar nav (Simulator/History/Credentials), wraps every page via `app/layout.tsx` |
+| `lib/tenant.ts` | `TENANT_SLUG` constant — single-tenant by design, see Section 3.18 |
+| `lib/streams.ts` | `getActiveStream()` — picks the tenant's most recently created `enabled` stream, used by `/api/simulate` |
+| `lib/remediation.ts` | Canonical CAEP-type → live Workflow name/SailPoint-action text the UI displays, plus per-scenario overrides (e.g. the reverse-direction Jamf scenario) |
+| `prisma/migrations/20260729120000_add_audit_log_scenario_key/` | Adds nullable `AuditLog.scenarioKey`, so History can show real vendor/event names |
+| `scripts/update-device-compliance-workflow.ts` | One-time: widened the device-compliance-change trigger filter, added the PRISM+AD scope + `Check Compliance Status` choice step (Section 3.18) |
+| `scripts/update-device-compliance-description.ts` | One-time: updated that Workflow's own description text to match its new dual-direction behavior |
+| `scripts/check-audit-stream-ids.ts` | Read-only diagnostic used while root-causing the `NEXT_PUBLIC_APP_URL` bug — confirmed every send used the same stream ID, ruling out stream-selection as the cause |
+| `.claude/launch.json` | Dev-server launch config so the app can be previewed via the browser-automation tooling (`npm run dev` on port 3000) |
 
 ---
 
@@ -1043,13 +1215,21 @@ noted.
   session, but worth monitoring — if signal sends start failing with 401
   "JWT is expired" again, run `scripts/check-stream-auth.ts <streamId>`
   first to confirm before assuming a new bug).
-- **`NEXT_PUBLIC_APP_URL` is optional** — the app auto-detects Vercel's
-  production URL via `VERCEL_PROJECT_PRODUCTION_URL` when deployed. It
-  only needs to be set explicitly for local script runs (see Section 10)
-  or a custom domain.
-- **No portal/Simulator UI exists.** Every signal sent in this project so
-  far was triggered by a developer running `scripts/test-send.ts` from a
-  terminal — not something an SE could do today without engineering help.
+- **`NEXT_PUBLIC_APP_URL` is optional only when actually deployed on
+  Vercel** (`VERCEL_PROJECT_PRODUCTION_URL` is a Vercel-injected variable
+  that doesn't exist during local `npm run dev`) — locally it must always
+  be set to the real deployed URL, never `localhost`, or every signed
+  token's `iss`/`aud` will fail ISC's audience check while still returning
+  a misleadingly-successful HTTP 202 (Section 3.18 — this was a real bug
+  that broke every UI-triggered send until caught and fixed 2026-07-29).
+  Don't set this to `localhost` again for "convenience" — ISC never talks
+  to your local machine in this flow, so there's no actual benefit and a
+  real cost.
+- **RESOLVED 2026-07-29 (Section 3.18): a real portal/Simulator UI now
+  exists**, deployed to production and proven end-to-end there. Every
+  signal sent in this project *before* that point was triggered by a
+  developer running `scripts/test-send.ts` from a terminal — that
+  limitation is gone.
 - **If an SE ever pushes back and wants a "laptop-only" experience**, the
   source doc has an explicit, named answer for this, and it is not "build
   a local transmitter": *"the compromise is a thin local controller that
@@ -1198,25 +1378,31 @@ back toward them over time:
    - Catalog data structure (`vendor`, `displayName`, `triggerCode`,
      `ssfEventType`) is still not built (`scripts/test-send.ts` still
      hardcodes one scenario inline) — remains open, see item 6 below.
-6. **No Simulator UI, and no SE-facing surface of any kind.** The source
-   doc's "Minimum viable SE surface" (Section 3 of `How to Build...`) is
-   four pieces, and **all four are 100% unbuilt**:
-   - **Credentials** — ISC connection setup + Test Connection + copy
-     Discovery URL/API token. Currently: manual `.env` editing +
-     `provision-tenant` CLI script.
-   - **Simulator** — vendor → event → subject → Send Now. Currently:
-     manually editing `scripts/test-send.ts` and running it from a
-     terminal.
-   - **History** — success/fail + raw result. Currently:
-     `scripts/check-audit.ts`, a CLI diagnostic only.
-   - **Admin catalog** — add/edit vendor scenarios without redeploying.
-     Currently: does not exist; would require code changes and a redeploy
-     to add a scenario today.
-   Nice-to-haves named in the same section, also all unbuilt: saved demo
-   identities/picker, countdown/queued sends, companion Workflow JSON
-   templates (see item 9 below), and preview-matches-wire-payload.
-   **This is the single largest gap in the project relative to its stated
-   purpose** ("lets Solutions Engineers inject..." — not developers).
+6. **RESOLVED 2026-07-29 (Section 3.18): a real Simulator UI/SE-facing
+   surface now exists**, deployed to production and independently
+   verified there. Status against the source doc's "Minimum viable SE
+   surface" (Section 3 of `How to Build...`), updated:
+   - **Credentials** — ✅ built. Read-only Discovery URL + API token
+     display with Show/Copy. Provisioning a *new* tenant is still a
+     one-time CLI step (`provision-tenant`), deliberately out of scope for
+     this pass.
+   - **Simulator** — ✅ built. Vendor → event → subject → Send Now, live
+     JSON preview, real HTTP result.
+   - **History** — ✅ built. Real `AuditLog` data, vendor/event name shown
+     via the new `scenarioKey` column.
+   - **Admin catalog** — still **not built**. Adding/editing vendor
+     scenarios still requires a code change to `lib/catalog.ts` and a
+     redeploy. Explicitly deferred, not forgotten — see the design doc's
+     "What NOT to include."
+   Nice-to-haves still unbuilt: saved demo identities/picker, countdown/
+   queued sends, companion Workflow JSON templates (see item 9 below), and
+   preview-matches-wire-payload (arguably now satisfied in spirit by the
+   Simulator's live JSON preview panel, though not literally comparing
+   against a captured wire payload).
+   **This was the single largest gap in the project relative to its stated
+   purpose** ("lets Solutions Engineers inject..." — not developers) — it
+   is now closed for the core 3-page flow; only the Admin catalog piece
+   remains.
 7. **The original "Threat Signal Transmitter" Receiver/Stream (the first
    one created, before "v2") still exists in ISC with a permanently
    expired authorization credential.** It was not deleted — only a second,
@@ -1412,11 +1598,18 @@ this session's improvised order.
 
 ### 9.2 Broader next steps beyond the backlog
 
-As of the end of this session, **the highest-priority item is the Simulator
-UI (item 10 below)** — re-confirmed directly with the user, because every
+**UPDATE 2026-07-29 (later session): item 10 (the Simulator UI) is DONE**
+— see Section 3.18. It's live in production, proven end-to-end there, and
+this was re-confirmed as the top priority before being built, exactly as
+the note below (written earlier in the day) said to. The paragraph below
+is kept for the historical reasoning, but don't treat "build the Simulator
+UI" as still-open — the new top priority is whichever of items 9, 11, 12
+below, or the Admin catalog piece (Section 7 item 6), matters most next.
+
+As of earlier the same day, **the highest-priority item was the Simulator
+UI (item 10 below)** — confirmed directly with the user, because every
 other gap (more CAEP types, more Workflows) only deepens the *backend*,
-while zero of it is usable by an actual SE until some UI exists. Don't
-default back to backend-only work without re-checking this priority call.
+while zero of it is usable by an actual SE until some UI exists.
 
 9. **RESOLVED (2026-07-28) — see Section 7, item 5.** The event-model
    design decision is made: catalog entries map to a CAEP event type (not a
@@ -1425,12 +1618,15 @@ default back to backend-only work without re-checking this priority call.
    around `vendor`, `displayName`, `triggerCode`, `ssfEventType` (per the
    source doc's "Catalog fields to lock"), and plan one Workflow per tested
    CAEP type rather than one generic branching Workflow.
-10. **Start Phase 2 in earnest**: design and build the actual Simulator UI
-    (vendor dropdown, scenario picker, identity picker, Send Now button)
-    so sending a signal stops requiring a developer running a script from
-    a terminal. Backlog items 3, 4, and 7 (Section 9.1) all live here,
-    along with the full "minimum viable SE surface" spec in Section 7,
-    item 6 (Credentials / Simulator / History / Admin catalog).
+10. **DONE (2026-07-29, Section 3.18).** The Simulator UI is built,
+    deployed, and proven end-to-end in production — vendor grid, event
+    picker, subject field, Send button, live JSON preview, real result.
+    Backlog items 3 and 4 (Section 9.1) are effectively satisfied by the
+    live preview panel and the plain-text subject field respectively; item
+    7 (scheduler/queue) remains unbuilt, low priority. The "minimum viable
+    SE surface" spec in Section 7 item 6 is done for 3 of its 4 pieces —
+    only the Admin catalog piece (add/edit scenarios without a redeploy)
+    is still open.
 11. **Write the full external onboarding guide** for other SEs — this
     runbook plus the README are internal/technical; a polished, SE-facing
     step-by-step (screenshots, no jargon) is still needed, matching what
