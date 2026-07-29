@@ -9,21 +9,24 @@ import type { CaepEventInput } from "./caep";
 // claims, so each CAEP type gets its own Workflow, not a shared one).
 //
 // Restricted 2026-07-29 to exactly 5 vendors -- Okta, Microsoft,
-// CrowdStrike, Proofpoint, Jamf -- each with the realistic event set a
-// teammate's separate SSF Signals Portal actually ships (event names and
-// CAEP-type assignments are real, tested ground truth from that app).
-// Deliberately NOT forced into an even 5-CAEP-types-per-vendor grid --
-// each vendor's events map to whichever CAEP type is honest for that
-// vendor's real product (Jamf skews device-compliance-change since it's
-// an MDM; Okta skews risk-level-change since it's an identity risk
-// engine). See HANDOFF_RUNBOOK.md Section 3.17 for the full mapping
-// table and which assignments are confirmed vs. judgment calls.
+// CrowdStrike, Proofpoint, Jamf. The 14 CrowdStrike/Microsoft/Okta/
+// Proofpoint scenarios below are the original set imported from a
+// teammate's separate SSF Signals Portal export (different transmitter/
+// tenant: acme-demo) -- restored here after a brief detour through a
+// different 24-scenario set built from a second reference app, which was
+// reverted back to this one per explicit direction. The teammate's export
+// used a `sub_id`/`subject` "complex" wrapper format, deliberately NOT
+// carried over -- our sendSsfSignal() builds sub_id itself from a plain
+// subjectEmail, using the flat {format:"email", email:...} shape already
+// proven to correlate correctly against company21912-poc. See
+// HANDOFF_RUNBOOK.md for the compatibility analysis and format test.
 //
-// The claim CONTENT here is our own, not copied from that other app --
-// their example payload for one of these events was missing CAEP's
-// required claims (current_level/previous_level) and used non-standard
-// custom fields (reason/action) instead of the spec's reason_admin.
-// Every entry below passes buildCaepEvent()'s required-claim validation.
+// Zscaler (the payload's 5th vendor, 3 scenarios: C2 Beaconing, Device
+// Isolated, Landmine Triggered -- including our only token-claims-change
+// scenario) is deliberately dropped per the "vendors should only be"
+// scope decision. Jamf (4 scenarios, all device-compliance-change) fills
+// the 5th vendor slot instead, using real event names from a second
+// reference app, already vetted and approved.
 export interface VendorScenario {
   vendor: string;
   displayName: string;
@@ -34,282 +37,160 @@ export interface VendorScenario {
 }
 
 export const VENDOR_SCENARIOS: Record<string, VendorScenario> = {
-  // --- Okta (5) -- all risk-level-change: Okta's real alerting (ThreatInsight,
-  // adaptive MFA, sign-on policy) is fundamentally an identity-risk signal
-  // engine, not a device or credential-lifecycle manager, so an uneven
-  // distribution here is the honest one, not a gap.
-  "okta-impossible-travel": {
-    vendor: "Okta",
-    displayName: "Account Takeover / Impossible Travel Success",
-    triggerCode: "okta.threat.impossible_travel",
-    event: {
-      type: "risk-level-change",
-      claims: { current_level: "HIGH", previous_level: "LOW" },
-      vendor: "Okta",
-      vendorEventType: "impossible_travel",
-      recommendedAction: "disable_account",
-      reasonAdmin: "Account Takeover / Impossible Travel Success",
-    },
-  },
-  "okta-attack-started": {
-    vendor: "Okta",
-    displayName: "Attack Started (Org Under Attack)",
-    triggerCode: "okta.threatinsight.org_under_attack",
-    event: {
-      type: "risk-level-change",
-      claims: { current_level: "HIGH", previous_level: "MEDIUM" },
-      vendor: "Okta",
-      vendorEventType: "org_under_attack",
-      recommendedAction: "disable_account",
-      reasonAdmin: "Organization-wide attack campaign detected (Okta ThreatInsight)",
-    },
-  },
-  "okta-threat-detected": {
-    vendor: "Okta",
-    displayName: "High Threat Detected (ThreatInsight)",
-    triggerCode: "okta.threatinsight.high_threat",
-    event: {
-      type: "risk-level-change",
-      claims: { current_level: "HIGH", previous_level: "LOW" },
-      vendor: "Okta",
-      vendorEventType: "threatinsight_high_threat",
-      recommendedAction: "disable_account",
-      reasonAdmin: "High threat detected via Okta ThreatInsight",
-    },
-  },
-  "okta-mfa-fatigue": {
-    vendor: "Okta",
-    displayName: "MFA Fatigue / Push Bombing Success",
-    triggerCode: "okta.mfa.push_bombing_success",
-    event: {
-      type: "risk-level-change",
-      claims: { current_level: "HIGH", previous_level: "LOW" },
-      vendor: "Okta",
-      vendorEventType: "mfa_push_bombing_success",
-      recommendedAction: "disable_account",
-      reasonAdmin: "Multiple MFA pushes followed by success (push bombing)",
-    },
-  },
-  "okta-risky-device": {
-    vendor: "Okta",
-    displayName: "New Risky Device + Location",
-    triggerCode: "okta.risk.new_device_location",
-    event: {
-      type: "risk-level-change",
-      claims: { current_level: "MEDIUM", previous_level: "LOW" },
-      vendor: "Okta",
-      vendorEventType: "new_risky_device_location",
-      recommendedAction: "require_reauth",
-      reasonAdmin: "Sign-in from a new, unrecognized device and location",
-    },
-  },
-
-  // --- Microsoft (5)
-  "microsoft-impossible-travel": {
-    vendor: "Microsoft",
-    displayName: "Impossible Travel Sign-in",
-    triggerCode: "ms.identityProtection.impossibleTravel",
-    event: {
-      type: "risk-level-change",
-      claims: { current_level: "HIGH", previous_level: "LOW" },
-      vendor: "Microsoft",
-      vendorEventType: "impossible_travel",
-      recommendedAction: "disable_account",
-      reasonAdmin: "Impossible Travel Sign-in",
-    },
-  },
-  "microsoft-leaked-credentials": {
-    vendor: "Microsoft",
-    displayName: "Leaked Credentials Confirmed",
-    triggerCode: "riskEventType:leakedCredentials",
-    event: {
-      type: "credential-change",
-      // Per OpenID CAEP spec: credential_type/change_type enums.
-      claims: { credential_type: "password", change_type: "revoke" },
-      vendor: "Microsoft",
-      vendorEventType: "leaked_credentials",
-      recommendedAction: "disable_account",
-      reasonAdmin: "Leaked Credentials Confirmed",
-    },
-  },
-  "microsoft-atypical-signin": {
-    vendor: "Microsoft",
-    displayName: "Medium Risk Atypical Sign-in",
-    triggerCode: "ms.identityProtection.atypicalSignin",
-    event: {
-      type: "risk-level-change",
-      claims: { current_level: "MEDIUM", previous_level: "LOW" },
-      vendor: "Microsoft",
-      vendorEventType: "atypical_signin",
-      recommendedAction: "require_reauth",
-      reasonAdmin: "Medium Risk Atypical Sign-in",
-    },
-  },
-  "microsoft-password-spray": {
-    vendor: "Microsoft",
-    displayName: "Password Spray Attack Success",
-    triggerCode: "ms.identityProtection.passwordSpray",
-    event: {
-      type: "credential-change",
-      claims: { credential_type: "password", change_type: "revoke" },
-      vendor: "Microsoft",
-      vendorEventType: "password_spray_success",
-      recommendedAction: "disable_account",
-      reasonAdmin: "Password Spray Attack Success",
-    },
-  },
-  "microsoft-mailbox-rule": {
-    vendor: "Microsoft",
-    displayName: "Post-Compromise Mailbox Rule Created",
-    triggerCode: "ms.exchange.suspiciousMailboxRule",
-    event: {
-      type: "session-revoked",
-      claims: {}, // no required claims per the CAEP spec for this type
-      vendor: "Microsoft",
-      vendorEventType: "post_compromise_mailbox_rule",
-      recommendedAction: "force_reauth",
-      reasonAdmin: "Post-Compromise Mailbox Rule Created",
-    },
-  },
-
-  // --- CrowdStrike (5, trimmed from a 10-event reference list -- kept the
-  // 5 with the clearest, most distinct CAEP-type fit)
-  "crowdstrike-identity-risk": {
+  // --- CrowdStrike (3, from the teammate's export)
+  "crowdstrike-host-isolated": {
     vendor: "CrowdStrike",
-    displayName: "High Identity Risk",
-    triggerCode: "cs.identity.high_risk",
+    displayName: "Host Isolated",
+    triggerCode: "host_isolated",
     event: {
       type: "risk-level-change",
-      claims: { current_level: "HIGH", previous_level: "MEDIUM" },
+      claims: { current_level: "HIGH", previous_level: "LOW" },
       vendor: "CrowdStrike",
-      vendorEventType: "high_identity_risk",
-      recommendedAction: "disable_account",
-      reasonAdmin: "High Identity Risk",
+      vendorEventType: "host_isolated",
+      recommendedAction: "require_reauth",
+      reasonAdmin: "CrowdStrike: Host Isolated",
     },
   },
-  "crowdstrike-compromised-password": {
+  "crowdstrike-host-isolated-device": {
     vendor: "CrowdStrike",
-    displayName: "Compromised Password Detected",
-    triggerCode: "cs.identity.compromised_password",
-    event: {
-      type: "credential-change",
-      claims: { credential_type: "password", change_type: "revoke" },
-      vendor: "CrowdStrike",
-      vendorEventType: "compromised_password",
-      recommendedAction: "disable_account",
-      reasonAdmin: "Compromised Password Detected",
-    },
-  },
-  "crowdstrike-ransomware": {
-    vendor: "CrowdStrike",
-    displayName: "Ransomware / File Encryption",
-    triggerCode: "cs.falcon.ransomware_detected",
+    displayName: "Host Isolated (Device Compliance)",
+    triggerCode: "cs_host_isolated",
     event: {
       type: "device-compliance-change",
       claims: { current_status: "not-compliant", previous_status: "compliant" },
       vendor: "CrowdStrike",
-      vendorEventType: "ransomware_file_encryption",
+      vendorEventType: "cs_host_isolated",
       recommendedAction: "block_device",
-      reasonAdmin: "Ransomware / File Encryption detected on managed host",
+      reasonAdmin: "CrowdStrike: Host Isolated",
     },
   },
-  "crowdstrike-lateral-movement": {
+  "crowdstrike-identity-compromise": {
     vendor: "CrowdStrike",
-    displayName: "Lateral Movement + Privilege Escalation",
-    triggerCode: "cs.falcon.lateral_movement_privesc",
-    event: {
-      type: "session-revoked",
-      claims: {},
-      vendor: "CrowdStrike",
-      vendorEventType: "lateral_movement_privilege_escalation",
-      recommendedAction: "force_reauth",
-      reasonAdmin: "Lateral Movement + Privilege Escalation detected",
-    },
-  },
-  "crowdstrike-intel-match": {
-    vendor: "CrowdStrike",
-    displayName: "Intel Domain / Indicator Match",
-    triggerCode: "cs.intel.indicator_match",
+    displayName: "Identity Compromise Detected",
+    triggerCode: "cs_identity_compromise",
     event: {
       type: "risk-level-change",
-      claims: { current_level: "HIGH", previous_level: "LOW" },
+      claims: { current_level: "HIGH", previous_level: "MEDIUM" },
       vendor: "CrowdStrike",
-      vendorEventType: "intel_domain_indicator_match",
-      recommendedAction: "disable_account",
-      reasonAdmin: "Intel Domain / Indicator Match",
+      vendorEventType: "cs_identity_compromise",
+      recommendedAction: "restrict_access",
+      reasonAdmin: "CrowdStrike: Identity Compromise Detected",
     },
   },
 
-  // --- Proofpoint (5)
-  "proofpoint-anomalous-email": {
+  // --- Microsoft (2, from the teammate's export)
+  "microsoft-high-risk-user": {
+    vendor: "Microsoft",
+    displayName: "High-Risk User Flagged",
+    triggerCode: "ms_high_risk_user",
+    event: {
+      type: "risk-level-change",
+      claims: { current_level: "HIGH", previous_level: "LOW" },
+      vendor: "Microsoft",
+      vendorEventType: "ms_high_risk_user",
+      recommendedAction: "restrict_access",
+      reasonAdmin: "Microsoft: High-Risk User Flagged",
+    },
+  },
+  "microsoft-session-hijack": {
+    vendor: "Microsoft",
+    displayName: "Session Hijack Detected",
+    triggerCode: "ms_session_hijack",
+    event: {
+      type: "session-revoked",
+      claims: {}, // no required claims per the CAEP spec for this type
+      vendor: "Microsoft",
+      vendorEventType: "ms_session_hijack",
+      recommendedAction: "force_reauth",
+      reasonAdmin: "Microsoft: Session Hijack Detected",
+    },
+  },
+
+  // --- Okta (3, from the teammate's export)
+  "okta-credential-reset": {
+    vendor: "Okta",
+    displayName: "Credential Reset",
+    triggerCode: "okta_credential_reset",
+    event: {
+      type: "credential-change",
+      claims: { credential_type: "password", change_type: "revoke" },
+      vendor: "Okta",
+      vendorEventType: "okta_credential_reset",
+      recommendedAction: "require_reauth",
+      reasonAdmin: "Okta: Credential Reset",
+    },
+  },
+  "okta-mfa-unenroll": {
+    vendor: "Okta",
+    displayName: "MFA Unenrollment",
+    triggerCode: "okta_mfa_unenroll",
+    event: {
+      type: "credential-change",
+      claims: { credential_type: "mfa", change_type: "revoke" },
+      vendor: "Okta",
+      vendorEventType: "okta_mfa_unenroll",
+      recommendedAction: "require_mfa_reenroll",
+      reasonAdmin: "Okta: MFA Unenrollment",
+    },
+  },
+  "okta-session-revoked": {
+    vendor: "Okta",
+    displayName: "Session Revoked",
+    triggerCode: "okta_session_revoked",
+    event: {
+      type: "session-revoked",
+      claims: {},
+      vendor: "Okta",
+      vendorEventType: "okta_session_revoked",
+      recommendedAction: "force_reauth",
+      reasonAdmin: "Okta: Session Revoked",
+    },
+  },
+
+  // --- Proofpoint (3, from the teammate's export)
+  "proofpoint-dlp-violation": {
     vendor: "Proofpoint",
-    displayName: "Anomalous Email Behavior (Possible ATO)",
-    triggerCode: "pfpt.tap.anomalous_email_behavior",
+    displayName: "DLP Violation",
+    triggerCode: "pfpt_dlp_violation",
+    event: {
+      type: "risk-level-change",
+      claims: { current_level: "HIGH", previous_level: "LOW" },
+      vendor: "Proofpoint",
+      vendorEventType: "pfpt_dlp_violation",
+      recommendedAction: "restrict_access",
+      reasonAdmin: "Proofpoint: DLP Violation",
+    },
+  },
+  "proofpoint-tap-click": {
+    vendor: "Proofpoint",
+    displayName: "TAP Malicious Click",
+    triggerCode: "pfpt_tap_click",
     event: {
       type: "risk-level-change",
       claims: { current_level: "MEDIUM", previous_level: "LOW" },
       vendor: "Proofpoint",
-      vendorEventType: "anomalous_email_behavior",
+      vendorEventType: "pfpt_tap_click",
       recommendedAction: "require_reauth",
-      reasonAdmin: "Anomalous Email Behavior (Possible ATO)",
+      reasonAdmin: "Proofpoint: TAP Malicious Click",
     },
   },
-  "proofpoint-bec": {
+  "proofpoint-vap-flagged": {
     vendor: "Proofpoint",
-    displayName: "BEC / Impostor Message",
-    triggerCode: "pfpt.tap.bec_impostor",
+    displayName: "Very Attacked Person (VAP) Flagged",
+    triggerCode: "pfpt_vap_flagged",
     event: {
       type: "risk-level-change",
-      claims: { current_level: "HIGH", previous_level: "LOW" },
+      claims: { current_level: "HIGH", previous_level: "MEDIUM" },
       vendor: "Proofpoint",
-      vendorEventType: "bec_impostor_message",
+      vendorEventType: "pfpt_vap_flagged",
       recommendedAction: "restrict_access",
-      reasonAdmin: "BEC / Impostor Message",
-    },
-  },
-  "proofpoint-dlp-violation": {
-    vendor: "Proofpoint",
-    displayName: "Critical DLP Violation (Exfil)",
-    triggerCode: "pfpt.dlp.critical_violation_exfil",
-    event: {
-      type: "risk-level-change",
-      claims: { current_level: "HIGH", previous_level: "LOW" },
-      vendor: "Proofpoint",
-      vendorEventType: "critical_dlp_violation_exfil",
-      recommendedAction: "restrict_access",
-      reasonAdmin: "Critical DLP Violation (Exfil)",
-    },
-  },
-  "proofpoint-malicious-attachment": {
-    vendor: "Proofpoint",
-    displayName: "Malicious Attachment Delivered & Clicked",
-    triggerCode: "pfpt.tap.malicious_attachment_clicked",
-    event: {
-      type: "session-revoked",
-      claims: {},
-      vendor: "Proofpoint",
-      vendorEventType: "malicious_attachment_delivered_clicked",
-      recommendedAction: "force_reauth",
-      reasonAdmin: "Malicious Attachment Delivered & Clicked",
-    },
-  },
-  "proofpoint-malicious-click": {
-    vendor: "Proofpoint",
-    displayName: "Permitted Click on Malicious URL",
-    triggerCode: "pfpt.tap.permitted_malicious_click",
-    event: {
-      type: "credential-change",
-      claims: { credential_type: "password", change_type: "revoke" },
-      vendor: "Proofpoint",
-      vendorEventType: "permitted_click_malicious_url",
-      recommendedAction: "require_reauth",
-      reasonAdmin: "Permitted Click on Malicious URL",
+      reasonAdmin: "Proofpoint: Very Attacked Person (VAP) Flagged",
     },
   },
 
-  // --- Jamf (4 -- deliberately not padded to 5; all four real events Jamf
-  // actually ships map to device-compliance-change, which is honest for an
-  // MDM vendor, not a gap to paper over).
+  // --- Jamf (4 -- fills the 5th vendor slot in place of Zscaler; real
+  // event names from a second reference app, all device-compliance-change,
+  // which is the honest result for an MDM vendor, not a gap)
   "jamf-device-noncompliant": {
     vendor: "Jamf",
     displayName: "Device Non-Compliant",
@@ -333,9 +214,8 @@ export const VENDOR_SCENARIOS: Record<string, VendorScenario> = {
       // device-compliance-change Workflow's trigger filter only matches
       // current_status == "not-compliant" (Section 3.10) -- sending this
       // scenario will correlate but will NOT fire the disable Workflow.
-      // That's correct, intentional behavior (a "back to compliant" event
-      // shouldn't trigger a disable action), not a bug -- worth knowing
-      // before assuming a failed test.
+      // Confirmed live 2026-07-29 -- correct, intentional behavior, not a
+      // bug.
       type: "device-compliance-change",
       claims: { current_status: "compliant", previous_status: "not-compliant" },
       vendor: "Jamf",
