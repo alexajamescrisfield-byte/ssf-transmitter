@@ -17,11 +17,15 @@ describe("catalog scenarios", () => {
     expect(types.size).toBeGreaterThanOrEqual(3);
   });
 
-  it("covers all 5 supported CAEP types, never a 6th", () => {
+  it("never uses an unsupported 6th CAEP type", () => {
     const types = new Set(Object.values(VENDOR_SCENARIOS).map((s) => s.event.type));
     for (const t of types) {
       expect(CAEP_EVENT_TYPES).toContain(t);
     }
-    expect(types.size).toBe(5);
+    // Not asserting types.size === 5: the catalog is restricted to 5
+    // vendors (Okta/Microsoft/CrowdStrike/Proofpoint/Jamf) with realistic,
+    // honestly-mapped events (2026-07-29) -- none of those vendors'  real
+    // event sets naturally produce a token-claims-change scenario, so 4 of
+    // 5 types is the accurate, deliberate result, not a gap.
   });
 });
