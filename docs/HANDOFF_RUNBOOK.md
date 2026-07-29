@@ -556,6 +556,101 @@ neither gets re-attempted without new information:
   vendor's events, since there is no proven way (claim- or filter-based)
   for a Workflow to tell them apart at runtime.
 
+### 3.15 Teammate's SSF Signals Portal payload: catalog merge + `sub_id` "complex" format investigation (2026-07-29)
+
+A teammate working a separate, independent SSF transmitter build (different
+app, different ISC tenant: `acme-demo`) shared their catalog export —
+14 vendor scenarios across CrowdStrike/Microsoft/Okta/Proofpoint/Zscaler,
+all correctly mapped onto the 5 supported CAEP types with correct
+required-claim shapes per the OpenID CAEP spec.
+
+**Decision: keep this project's own transmitter backend, don't switch to
+theirs.** Our protocol layer (discovery, JWKS, streams, signing, delivery)
+is already proven end-to-end against `company21912-poc` — re-platforming
+onto an unproven, separate codebase would mean re-doing Phase 0/1 work for
+no benefit. Their export was catalog **data**, not a reason to change
+transmitters.
+
+**Catalog merge**: their 14 scenarios were added to `lib/catalog.ts`
+(19 scenarios total now, up from 5), using our own claim-building pipeline
+— `sendSsfSignal()`/`buildCaepEvent()` were not modified. One scenario
+(`crowdstrike-host-isolated`) was sent for real against `company21912-poc`
+and confirmed to correlate and fire the existing `risk-level-change`
+Workflow (PRISM disable) correctly, same as always. All 28 tests
+(24 original + 4 new/adjusted) still pass.
+
+**Safety process used for this work (per explicit user instruction to
+never risk breaking a working build)**: committed the pre-merge state to
+`main` first as a verified checkpoint (all tests passing), then did all
+catalog-merge and experimentation work on a new `dev` branch. `main` stays
+at the checkpoint until `dev` is explicitly merged.
+
+**The `sub_id` "complex" format question — investigated, corrected, and
+resolved:**
+
+The teammate's export used a `sub_id`/`subject` shape our own transmitter
+does **not** produce:
+```json
+"sub_id": { "format": "complex", "user": { "format": "email", "email": "..." } }
+```
+versus our own proven flat shape (`lib/ssf.ts`):
+```json
+"sub_id": { "format": "email", "email": "..." }
+```
+
+The teammate separately reported (unprompted, after seeing this project's
+catalog-merge summary) that in **their own tenant**, they had to switch
+from a flat email/account format to this "complex" wrapper to get a
+correlated event to actually fire a Workflow trigger — and warned this
+project would hit the same issue.
+
+**First test (flawed) said "complex" doesn't work here — this was
+wrong**, and the mistake is worth recording so it isn't repeated:
+sent an isolated real signal (`scripts/test-complex-sub-id-format.ts`,
+built standalone, doesn't touch `lib/ssf.ts`) using the complex `sub_id`
+shape, checked for a new Workflow execution ~10-12 seconds later, saw
+none, and initially concluded the format failed to correlate/trigger.
+**This conclusion was wrong because the wait was too short.** The user
+checked the Receiver's own Event Log directly in the ISC UI (no API for
+this was found — `/beta/shared-signals*`, `/beta/receivers`,
+`/beta/ssf*`, `/beta/sse-feed*` all 404, confirming this is UI-only,
+same as Section 3.9's original finding) and showed the complex-format
+signal had in fact correlated successfully (`Correlated` status). A
+follow-up check of Workflow executions (this time with no time-boxing
+assumption) found the trigger fired 30-60+ seconds after correlation —
+well after the original short check window. **A second, fully isolated
+test** (one signal, nothing else sent nearby, 60-second wait) confirmed
+this cleanly: the complex format correlates and triggers the Workflow
+correctly in `company21912-poc`, just like the flat format does.
+
+**Corrected conclusion**: both `sub_id` shapes work in this tenant as
+currently configured (Subject ID Format: "Use the identity's email
+attribute"). There is no evidence either format is broken here. The
+teammate's own described troubleshooting path (email format issues →
+tried an account-based format → account correlated but "didn't fill out
+all the information" → complex format fixed it) describes a materially
+different starting problem than anything hit in this project — most
+likely their tenant's Receiver uses a different Subject ID Format
+configuration (e.g. account-based, not plain email), and "complex" may be
+what *that* specific correlation mode requires, not a universal ISC
+requirement. No change was made to this project's `sub_id` handling as a
+result.
+
+**Lesson for future debugging, worth keeping**: CAEP Workflow trigger
+latency after a `Correlated` Event Log entry is **not always fast** —
+observed delays up to ~60 seconds in this session, versus near-instant
+firing seen in most other tests this project has run. Don't conclude "the
+trigger didn't fire" from a short wait window; check the Event Log's
+correlation status directly (UI-only, no API found) before concluding a
+signal shape is broken, and if time permits, wait at least 60 seconds
+before ruling out a delayed trigger.
+
+**Forward-looking note, not urgent**: if this transmitter is ever used
+across multiple SE-configured ISC tenants (Phase 3's ambition), Subject ID
+Format may vary tenant-to-tenant, and supporting both `sub_id` shapes (or
+making the shape configurable per tenant) could be a real robustness
+improvement worth adding then — not needed for `company21912-poc` today.
+
 ---
 
 ## 4. Files Created or Modified
