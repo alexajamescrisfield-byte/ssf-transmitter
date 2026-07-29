@@ -738,6 +738,86 @@ worth recording in full since it's a template for similar future asks:
    admin, who completes the actual change by hand) -- discussed with the
    user but not yet built; revisit if wanted.
 
+### 3.17 Catalog finalized (5 vendors, 15 scenarios) + the last 2 CAEP-type Workflows built (2026-07-29)
+
+**Catalog**: after a detour through a different 24-scenario set built from
+a second reference app (a teammate's live `ssf-signal-portal.vercel.app`
+portal), the catalog was reverted back to the original 14 scenarios
+imported from the first teammate payload (`acme-demo` export) --
+CrowdStrike (3), Microsoft (2), Okta (3), Proofpoint (3) -- with Zscaler's
+3 scenarios (including the sole `token-claims-change` one) dropped and
+replaced by 4 Jamf scenarios (all `device-compliance-change`, from the
+second reference app, already vetted). **15 scenarios, 5 vendors, final.**
+Current vendor/event/CAEP-type/Workflow mapping:
+
+| Vendor | Event | CAEP Type | Workflow |
+|---|---|---|---|
+| CrowdStrike | Host Isolated | risk-level-change | Disable PRISM |
+| CrowdStrike | Host Isolated (Device Compliance) | device-compliance-change | Disable PRISM |
+| CrowdStrike | Identity Compromise Detected | risk-level-change | Disable PRISM |
+| Microsoft | High-Risk User Flagged | risk-level-change | Disable PRISM |
+| Microsoft | Session Hijack Detected | session-revoked | Disable PRISM+AD, create campaign |
+| Okta | Credential Reset | credential-change | Disable PRISM+AD, create campaign |
+| Okta | MFA Unenrollment | credential-change | Disable PRISM+AD, create campaign |
+| Okta | Session Revoked | session-revoked | Disable PRISM+AD, create campaign |
+| Proofpoint | DLP Violation | risk-level-change | Disable PRISM |
+| Proofpoint | TAP Malicious Click | risk-level-change | Disable PRISM |
+| Proofpoint | Very Attacked Person (VAP) Flagged | risk-level-change | Disable PRISM |
+| Jamf | Device Non-Compliant | device-compliance-change | Disable PRISM |
+| Jamf | Device Returned to Compliance | device-compliance-change | *(correctly doesn't fire -- reverse direction, existing filter)* |
+| Jamf | Management Status Lost | device-compliance-change | Disable PRISM |
+| Jamf | Required Security Tool Missing | device-compliance-change | Disable PRISM |
+
+**All 5 CAEP types now have a live, proven Workflow** -- the
+`credential-change` and `session-revoked` Workflows were built today,
+closing what was the last real gap:
+
+- **`sp:manage-account` schema checked first** (per the "check native
+  actions before reaching for a workaround" lesson from Section 3.14):
+  only `disable`/`enable`/`unlock`/`delete` operations exist -- no native
+  credential-reset or session-kill action. Confirmed via
+  `scripts/check-manage-account-schema.ts`. This means the honest ceiling
+  for these two types' remediation is the same account-disable action
+  already used for `risk-level-change`/`device-compliance-change` --
+  not a shortcut, the platform's actual capability.
+- **Combined remediation, at the user's request**: both new Workflows
+  disable PRISM **and** Active Directory (broader than the existing
+  PRISM-only Workflows -- matching the Quarantine lifecycle state's
+  scoping, Section 3.16), **and** create a certification campaign
+  (reusing the `reviewerCertificationType: "IDENTITY"` fix from Section
+  3.14) -- two distinct native actions per Workflow, more than any of the
+  3 existing ones.
+- **New bug found and fixed**: a Workflow step's auto-generated JSONPath
+  reference name is derived from its **object key**, not its
+  `displayName`. The first attempt named the manager-lookup step
+  `"Get Identity's Manager"` (matching only the *displayName* convention
+  used elsewhere) -- the apostrophe/spaces meant ISC couldn't produce a
+  usable camelCase reference, so it kept the literal string, and
+  `Send Email`'s `$.getIdentity1.attributes.email` reference resolved to
+  nothing, failing with `"invalid parameter type received for
+  recipientEmailList"`. Fixed by using the key `"Get Identity 1"`
+  (matching the original working Workflow's exact convention) with
+  `displayName: "Get Identity's Manager"` as a separate field. Applied
+  live via `scripts/fix-credential-change-step-key.ts`; the
+  `session-revoked` Workflow used the corrected pattern from creation and
+  worked on the first attempt.
+- **Quarantine lifecycle-state automation revisited and declined again**:
+  before building these two Workflows, the user asked to reconsider
+  automating the Quarantine transition (Section 3.16) as part of them.
+  The only technical path (a dedicated, narrow-scope ISC API client
+  called directly from the Workflow's own `sp:http` step, credential
+  living only in that Workflow's JSON -- distinct from the earlier
+  rejected "deployed transmitter holds credentials" design) was discussed
+  in detail, but ultimately declined by the user. Both new Workflows
+  disable accounts + create a campaign only; Quarantine remains a manual
+  script step (`scripts/set-quarantine.ts`), unchanged from Section 3.16's
+  decision.
+- **Verified end-to-end for both**: real signal -> correlated -> trigger
+  fired -> PRISM+AD disabled -> certification campaign created `ACTIVE`
+  -> manager notified. Confirmed via `scripts/check-quarantine-result.ts`
+  and `scripts/list-campaigns.ts` after each test; PRISM+AD restored
+  afterward via `scripts/enable-prism-and-ad.ts`.
+
 ---
 
 ## 4. Files Created or Modified
