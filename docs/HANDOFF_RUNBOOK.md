@@ -651,6 +651,93 @@ Format may vary tenant-to-tenant, and supporting both `sub_id` shapes (or
 making the shape configurable per tenant) could be a real robustness
 improvement worth adding then — not needed for `company21912-poc` today.
 
+### 3.16 New capability: "Quarantine" identity lifecycle state (2026-07-29)
+
+A new lifecycle state, **Quarantine**, was added to the **HR** Identity
+Profile in `company21912-poc` (Admin -> Identity Profiles -> HR ->
+Lifecycle Management -> Create Lifecycle State), for the scenario "a
+device is found out of compliance -> quarantine the identity." Configured
+by hand via the UI, matching every other ISC-side config change in this
+project.
+
+**Configuration** (id `233f4cc5f6914af2a64e0b22a34677c9`, technical name
+`quarantine`):
+- Enable lifecycle: on
+- Remove all access: off (a stronger, separate action not requested)
+- Identity State: left as **Active** (not Inactive short-term) --
+  deliberately. `identityState` and `accountActions` are independent
+  fields; this tenant's own **Pre Hire** state already proves
+  `identityState: "ACTIVE"` combined with `accountActions: DISABLE` is a
+  normal, supported combination. Leaving it Active does not weaken the
+  actual disable behavior at all -- it only affects secondary
+  categorization (certification/reporting inclusion), not requested here.
+- Disable Accounts: **Specific sources** -- PRISM
+  (`8c63bd999dd74afcb4e344ba0466ae9b`) and Active Directory
+  (`ca713180aecb4ad3b424446335af000d`) only. HR and IdentityNow
+  deliberately excluded, same reasoning as the existing PRISM-only
+  Workflow scoping (Section 3.8): HR is an authoritative source of
+  record, not an access system.
+
+**Real ISC API used** (no native Workflow action exists for this --
+see below): `POST /v3/identities/{id}/set-lifecycle-state`, body
+`{"lifecycleStateId": "<id>"}`. Returns 200 with an `accountActivityId`
+-- this is an **async** provisioning job; allow 15-30+ seconds before
+checking results (both the lifecycle-state change itself and the
+account enable/disable side effects lag behind the API call).
+
+**Verified end-to-end** via `scripts/set-quarantine.ts`
+(Jayme Cannon -> Quarantine, then back to Active
+`347f044b05944339988fc782743e8d53`):
+- `cloudLifecycleState` (via the `identities` search index --
+  `scripts/search-identity-access.ts`) correctly read `"quarantine"`,
+  then `"active"` after reverting.
+- PRISM and Active Directory accounts: `disabled: true` while
+  quarantined, `disabled: false` after reverting (confirmed via
+  `scripts/check-quarantine-result.ts`).
+- IdentityNow and HR accounts: untouched (`disabled: false`) throughout,
+  confirming the specific-sources scoping worked correctly.
+
+**Automation status: deliberately NOT wired to any Workflow.** This is a
+manual capability only, triggered by running the script above with a
+real identity ID. A real design investigation preceded this decision --
+worth recording in full since it's a template for similar future asks:
+
+1. **No native Workflow action exists** to set an identity's lifecycle
+   state (confirmed via an exhaustive `beta/workflow-library` search --
+   `scripts/search-lifecycle-action.ts`). The only lifecycle-state-related
+   library entries are two *reactive* trigger events (`Identity Lifecycle
+   State Changed`/`...Processed`), which fire *after* a change happens
+   elsewhere -- nothing *causes* one.
+2. Checked whether a native **identity-attribute-update** action exists
+   that could indirectly trigger a criteria-based automatic lifecycle
+   transition instead (`scripts/search-attribute-update-action.ts`) --
+   also does not exist. No native path of any kind.
+3. The only way to actually make this change from a Workflow is the real
+   `set-lifecycle-state` API, which needs the identity ID as a URL path
+   segment -- the same string-templating limitation already confirmed in
+   Section 3.14 (`sp:http`'s `url` field only supports full-value
+   JSONPath, no partial substitution).
+4. A workaround was designed (Workflow calls a new endpoint on our own
+   transmitter via `sp:http`, body-based so the templating limit doesn't
+   apply, and our own server-side code makes the real ISC call) but was
+   **explicitly rejected by the user**: this would require the *deployed*
+   transmitter app itself to hold live ISC write credentials and use them
+   automatically/unattended -- a new trust boundary categorically
+   different from everything else in this project, where every ISC write
+   is either a native Workflow action (no external credentials at all) or
+   a script a human runs locally, by hand, with credentials that never
+   leave their machine.
+5. **Decision: mark full automation out of scope.** No native path
+   exists, and the one non-native path available was correctly ruled out
+   on security grounds. This is a genuine, confirmed ISC platform gap --
+   not a bug to keep chasing, and not worth building a workaround for
+   given the stated constraint. If this needs to be automated later, the
+   two real options are (a) a native "Set Lifecycle State" action if
+   SailPoint ever ships one, or (b) a **notify-only** Workflow (native
+   `Send Email`/`Interactive Message` action recommends quarantine to an
+   admin, who completes the actual change by hand) -- discussed with the
+   user but not yet built; revisit if wanted.
+
 ---
 
 ## 4. Files Created or Modified
