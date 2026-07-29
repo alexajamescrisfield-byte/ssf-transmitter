@@ -976,6 +976,55 @@ retrying, or by calling `/api/simulate` directly via `curl` for the
 production verification. Not an application bug; nothing in the app's own
 code was changed because of this.
 
+### 3.19 Branded HTML risk-detail email added to the risk-level-change Workflow (2026-07-29)
+
+The `risk-level-change` Workflow ("SSF Injector Demo - Remove Access When
+Risk Level Changes") had an existing but completely unconfigured `Send
+Email` step (`attributes: {"context": {}}`, empty `displayName`) --
+apparently shipped by the source template and never filled in. Built out
+for real via `scripts/update-risk-level-change-email.ts`:
+
+- **Added a "Get Identity's Manager" step** (key `Get Identity 1`, same
+  working pattern already used in the credential-change/session-revoked
+  Workflows -- Section 3.17's step-key-vs-displayName lesson applied
+  correctly from the start this time, no retry needed).
+- **Populated the email with a branded, table-based HTML body**: a maroon
+  header banner ("SailPoint Security Alert"), colored pill badges for
+  previous (green) and current (red) risk level, a bordered risk-detail
+  table, an amber callout box naming the action taken (PRISM disabled),
+  and a footer with signature + disclaimer. All styling is inline (no
+  `<style>` block -- most email clients strip those), table-based layout
+  throughout (not flexbox/grid) for the same compatibility reason.
+- **Deliberately does not reference `vendor`/`vendor_event_type`/
+  `recommended_action`** in the email body -- confirmed again, from a real
+  captured trigger payload earlier the same session, that ISC strips
+  these before a Workflow ever sees them (Section 7 item 5's original
+  finding still holds). Uses `reason_admin` instead, which **is**
+  preserved (official CAEP claim, empirically confirmed today) and
+  already carries vendor-style narrative text (e.g. "CrowdStrike: Host
+  Isolated").
+- **Real bug caught and fixed during this same change**: the first
+  attempt set `recipientEmailList` as a plain array
+  (`["$.getIdentity1.attributes.email"]`) instead of the JSONPath-
+  reference convention (`"recipientEmailList.$": "..."`) every other
+  working `sp:send-email` step in this project uses. As written, ISC
+  would have emailed the literal text of the JSONPath expression instead
+  of resolving it. Caught by testing, not assumed correct -- a real send
+  showed the email would not have reached anyone real. Fixed and
+  re-verified: the corrected version resolved to the identity's actual
+  manager, `Martena.Heath@sailpointdemo.com`.
+- **The Workflow was found disabled (`enabled: false`) at the start of
+  this change**, for reasons unrelated to it (not something this session
+  touched previously). Re-enabled as part of applying the fix, per the
+  same disable→patch→enable pattern used throughout this project for
+  structural Workflow edits.
+- **Verified end-to-end twice** -- once right after adding the plain
+  version of the email (caught the `recipientEmailList` bug), once again
+  after the branded-HTML rewrite requested afterward. Both times: real
+  signal → correlated → PRISM disabled → manager looked up correctly →
+  `Send Email` step `ActivityTaskCompleted` → Workflow `Completed`, all
+  within ~10 seconds.
+
 ---
 
 ## 4. Files Created or Modified
@@ -1052,6 +1101,7 @@ noted.
 | `prisma/migrations/20260729120000_add_audit_log_scenario_key/` | Adds nullable `AuditLog.scenarioKey`, so History can show real vendor/event names |
 | `scripts/update-device-compliance-workflow.ts` | One-time: widened the device-compliance-change trigger filter, added the PRISM+AD scope + `Check Compliance Status` choice step (Section 3.18) |
 | `scripts/update-device-compliance-description.ts` | One-time: updated that Workflow's own description text to match its new dual-direction behavior |
+| `scripts/update-risk-level-change-email.ts` | One-time: added the "Get Identity's Manager" step and a branded HTML risk-detail body to the risk-level-change Workflow's previously-empty `Send Email` step (Section 3.19) |
 | `scripts/check-audit-stream-ids.ts` | Read-only diagnostic used while root-causing the `NEXT_PUBLIC_APP_URL` bug — confirmed every send used the same stream ID, ruling out stream-selection as the cause |
 | `.claude/launch.json` | Dev-server launch config so the app can be previewed via the browser-automation tooling (`npm run dev` on port 3000) |
 
