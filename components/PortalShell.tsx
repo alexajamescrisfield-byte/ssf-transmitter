@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 const NAV = [
   { href: "/", label: "Simulator" },
@@ -11,12 +12,22 @@ const NAV = [
 
 export default function PortalShell({
   tenantSlug,
+  userEmail,
   children,
 }: {
   tenantSlug: string;
+  userEmail: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+
+  async function handleSignOut() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.replace("/login");
+    router.refresh();
+  }
 
   return (
     <div style={{ display: "flex", minHeight: "100vh", color: "oklch(0.22 0.01 70)" }}>
@@ -69,9 +80,29 @@ export default function PortalShell({
             fontSize: 11,
             color: "oklch(0.55 0.01 70)",
             borderTop: "1px solid oklch(0.9 0.01 70)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
           }}
         >
-          Internal demo tool — single tenant
+          <div>Internal demo tool — single tenant</div>
+          <div style={{ color: "oklch(0.4 0.01 70)", fontWeight: 600 }}>{userEmail}</div>
+          <button
+            onClick={handleSignOut}
+            style={{
+              background: "none",
+              border: "none",
+              padding: 0,
+              font: "inherit",
+              fontSize: 11,
+              color: "oklch(0.5 0.16 40)",
+              cursor: "pointer",
+              textAlign: "left",
+              textDecoration: "underline",
+            }}
+          >
+            Sign out
+          </button>
         </div>
       </div>
 
