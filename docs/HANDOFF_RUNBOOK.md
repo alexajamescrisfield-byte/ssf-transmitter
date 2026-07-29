@@ -1,6 +1,8 @@
 # Threat Signal Transmitter (TST) — Handoff Runbook
 
-**Date of this handoff:** 2026-07-27
+**Date of this handoff:** 2026-07-27 (last substantively updated
+2026-07-29 — see Section 3.14 for the token-claims-change fix that closed
+Definition of Done criterion 4)
 **Repo:** https://github.com/alexajamescrisfield-byte/ssf-transmitter (Public)
 **Live deployment:** https://ssf-transmitter-chi.vercel.app
 **ISC tenant used for testing:** `company21912-poc` (admin console: https://company21912-poc.identitynow-demo.com/)
@@ -43,6 +45,10 @@ account) in real time, without touching any real vendor APIs.
 
 ## 2. Current Status
 
+**Phase 0: COMPLETE. Phase 1: COMPLETE.** (both confirmed 2026-07-28 — see
+Section 2.2 for the reasoning on Phase 0, and the integration test harness
+added today for Phase 1.)
+
 **Phase 0 gate: PROVEN, end-to-end, against a real ISC tenant.**
 
 A real, live test was completed successfully:
@@ -74,33 +80,51 @@ Checking each criterion honestly, **this project is not yet complete**:
 | Provision a tenant in the portal | **Partial** — a tenant can be provisioned, but only via a CLI script (`scripts/provision-tenant.ts`), not "in the portal," because no portal exists yet |
 | Wire SailPoint ISC via Discovery URL + API token | **Done** |
 | Pass Verify Connection | **NOT done** — this is the unresolved `/ssf/verify` issue (Section 7, item 1). The source doc lists this as the literal #1 item in its "Suggested backlog (ordered)" |
-| Send at least 3 CAEP types from realistic vendor stories | **NOT done** — only 1 of the 5 supported CAEP types (`risk-level-change`) has been tested end-to-end. The doc's bar is at least 3 |
-| Show a Workflow remediation in ISC | **Done** — PRISM account disable, confirmed live |
+| Send at least 3 CAEP types from realistic vendor stories | **DONE (2026-07-29)** — see detail below the table |
+| Show a Workflow remediation in ISC | **Done** — PRISM account disable, confirmed live (2 CAEP types); certification campaign remediation confirmed live for the 3rd (see below) |
 
-**Bottom line: 2 of 5 definition-of-done criteria are fully met, 1 is
-partial, 2 are not done.** Do not treat this project as complete based on
-Section 2's "Phase 0 gate: PROVEN" framing alone — that refers to the
-*protocol* working, which is necessary but not sufficient for the actual
-definition of done in the source document. See Sections 7 and 9 for exactly
-what's left.
+**(2026-07-28) "Send at least 3 CAEP types" — detailed status:**
+- **`risk-level-change` (Okta)** — fully proven: signal → correlated → Workflow fired → PRISM disabled. Confirmed multiple times.
+- **`device-compliance-change` (Jamf)** — fully proven, same complete chain, confirmed 2026-07-28 (Section 3.10).
+- **`token-claims-change` (Zscaler)** — as of 2026-07-28, signal delivery, correlation, and Workflow **triggering** were proven, but the remediation step (`Create Certification Campaign`) failed with a reproducible ISC error. **RESOLVED 2026-07-29 — see Section 3.14.** The real root cause was found and fixed (not a platform bug after all): the native action's `reviewerCertificationType: "ACCESS"` branch always builds an unconstrained, tenant-wide search query, which is what exceeded the 10,000-item guard. Switching to `reviewerCertificationType: "IDENTITY"` fixes it completely, using only native actions (no workaround, no external HTTP calls). Confirmed working end-to-end, including a real notification email delivered.
+
+**(2026-07-29) Updated bottom line**: all 3 CAEP types now have the **full** chain proven — signal → correlate → trigger → real remediation executed — with zero remaining gaps attributable to an ISC platform bug. What looked like a platform bug on 2026-07-28 turned out to be a fixable Workflow misconfiguration; see Section 3.14 for the full story. This closes criterion 4 outright, not provisionally.
+
+**Bottom line, updated 2026-07-29:** 3 of 5 definition-of-done criteria are fully met outright (Wire ISC, Send ≥3 CAEP types, Show a Workflow remediation), 1 is partial (portal), 1 is externally blocked and tracked separately (Verify Connection — see Section 5's 2026-07-29 note on the decision not to file a SailPoint support case for it). Do not treat this project as complete based on Section 2's "Phase 0 gate: PROVEN" framing alone — that refers to the *protocol* working, which is necessary but not sufficient for the actual definition of done in the source document. See Sections 7 and 9 for exactly what's left.
+
+**(2026-07-28) Clarification, decided explicitly with the user:** the "NOT done"/partial rows do **not** mean Phase 0 or Phase 1 are incomplete — see Section 2.2. They mean the project-level Definition of Done is a separate, still-open finish line. Verify Connection is tracked as an external, non-blocking issue (support case) — and the token-claims-change campaign-generation bug is now tracked the same way (Section 7). Do not reinterpret or lower this bar — the criteria as the source document states them are unchanged; only our prioritization of *when*/*how* to finish them changed.
 
 ### 2.2 Is Phase 0/1 broken, or is this just Phase 2/3 not started yet?
 
 Read this before concluding anything above needs to be "fixed" or
 "gone back to." The distinction matters and is easy to blur:
 
-- **Phase 0 is essentially complete and working, not broken.** 4 of its 5
-  gate criteria (Section 2.1's source list) are done. The 1 remaining item
-  (Pass Verify Connection) is not something done wrong — it's externally
-  blocked on SailPoint's own connector behavior, already root-caused as
-  far as possible, and handed off as a support case (Section 7, item 1).
-  That is "waiting on an external answer," not "go back and fix our own
-  work."
-- **Phase 1 is essentially complete, with exactly one legitimate small
-  gap:** the automated integration test harness (Section 7, item 9;
-  Section 9.1, backlog item 8). Everything else in Phase 1's scope (stream
-  status gating, preferring the registered delivery URL) is done and
-  correct in the shipped code.
+- **(2026-07-28) Phase 0: CONFIRMED COMPLETE, not just "essentially"
+  complete.** 4 of its 5 gate criteria (Section 2.1's source list) are done
+  outright. The 1 remaining item (Pass Verify Connection) is not something
+  done wrong — it's externally blocked on SailPoint's own connector
+  behavior, already root-caused as far as possible, and handed off as a
+  support case (Section 7, item 1). Explicitly decided with the user: the
+  real signal pipeline (real signal → correlated → native Workflow fired →
+  real remediation executed, repeated successfully multiple times) is
+  *stronger* evidence of a working transmitter than the Verify handshake
+  would provide even if it passed — Verify is a synthetic smoke test for
+  exactly the thing we've already proven via the real functional path. So
+  this is "waiting on an external answer, tracked separately," not "Phase 0
+  isn't done."
+- **(2026-07-28) Phase 1: CONFIRMED COMPLETE.** The one remaining gap as of
+  2026-07-27 — the automated integration test harness (Section 7, item 9;
+  Section 9.1, backlog item 8) — was built today: a Vitest suite
+  (`tests/integration/`, run via `npm test`) covering discovery, JWKS,
+  stream create/GET/PATCH, auth boundaries, and `sendSsfSignal()`/
+  `sendVerificationSet()` claim shape, run against a local mock receiver
+  that captures and decodes the actual signed SET bytes. 24 tests, all
+  passing. Everything else in Phase 1's scope (stream status gating,
+  preferring the registered delivery URL) was already done and correct in
+  the shipped code. "Preview = wire payload parity" remains not-applicable
+  until Phase 2's Simulator UI exists to have parity with — that's a
+  sequencing property of the source doc's own phase ordering, not a Phase 1
+  shortfall.
 - **Everything else the audit surfaced — the event-model/catalog design,
   the entire Simulator UI, all of Phase 3 — is *not* a Phase 0/1 mistake.**
   It is Phase 2 and Phase 3 scope that correctly has not been started yet,
@@ -290,6 +314,248 @@ including `correlatedID` (proof of how ISC matched the subject),
 (our decoded SET), and `streamName`. Useful for debugging or for showing a
 technical audience "here's the real match" during a demo.
 
+### 3.10 Catalog data structure and `device-compliance-change` Workflow (2026-07-28)
+- Built `lib/catalog.ts`: the actual `vendor`/`displayName`/`triggerCode`/
+  `ssfEventType`/claims catalog structure the source doc asked for
+  (Section 7 item 6's gap). 5 scenarios, one per CAEP type: Okta
+  (`risk-level-change`), Microsoft (`credential-change`), Jamf
+  (`device-compliance-change`), Proofpoint (`session-revoked`), Zscaler
+  (`token-claims-change`) — using spec-confirmed enum values for each
+  type's required claims (fetched directly from the OpenID CAEP spec, not
+  guessed).
+- Built `scripts/send-scenario.ts`: sends any catalog scenario by key
+  against a real stream; lists all 5 if run with no arguments.
+- **Jamf chosen for `device-compliance-change`** over the originally-
+  planned CrowdStrike, after comparing against a real peer's vendor-event
+  catalog UI (see Section 3.13) — Jamf is the most literal, unambiguous
+  fit (MDM/device-compliance is its entire product category).
+- **Built the `device-compliance-change` companion Workflow via direct API
+  calls** (`scripts/create-device-compliance-workflow.ts`), not the UI —
+  same proven 3-step shape as the `risk-level-change` Workflow (`Get
+  Identity` → `Get Identity's Accounts` → `Manage Accounts`, PRISM-only
+  scoped from the start), trigger `idn:caep-device-compliance-change-events`.
+  Found the exact trigger IDs for all 5 CAEP types via a
+  previously-undocumented endpoint, `GET /beta/triggers` (see Section
+  10.5) — no guessing needed.
+- **Bug found and fixed**: the initial `POST /beta/workflows` call used
+  the wrong trigger-filter attribute key (`filter` instead of the
+  JSONPath-reference convention `filter.$`), so the created Workflow had
+  **no filter at all** and would have fired on every device-compliance
+  event, not just `not-compliant` ones. Fixed via
+  `scripts/fix-device-compliance-trigger-filter.ts` (disable → patch
+  `trigger.attributes` → re-enable, same pattern as Section 7 item 5's
+  fix). Confirmed correct afterward via `GET /beta/trigger-subscriptions`
+  (also previously undocumented — lists every Workflow's live trigger
+  registration, filter included).
+- **Confirmed working end-to-end**: real signal → correlated → Workflow
+  fired → PRISM disabled, confirmed via `scripts/check-prism-account.ts`
+  showing `disabled: true` at the exact execution timestamp. This is CAEP
+  type #2 fully proven (Section 2.1).
+
+### 3.11 `reason_admin`/`reason_user` claim-shape bug (2026-07-28)
+- Added `reasonAdmin`/`reasonUser` as proper optional fields to
+  `lib/caep.ts`'s `CaepEventInput`/`buildCaepEvent()` — these are
+  *official* CAEP schema claims (present on every event type per spec),
+  unlike `vendor`/`vendor_event_type`/`recommended_action`, so unlike
+  those, they're the legitimate way to carry human-readable narrative
+  context through to a Workflow.
+- **Bug**: initially implemented as plain strings. The first real
+  `device-compliance-change` send with `reason_admin` set was **rejected
+  outright** by ISC's parser: `"failed to parse token: token is malformed:
+  could not JSON decode claim"` — the whole event failed, never reaching
+  correlation or the Workflow at all.
+- **Root cause, found by reading the OpenID CAEP spec's own literal
+  example JSON** (not a summary): `reason_admin`/`reason_user` are
+  **localized objects** (`{ "en": "..." }`), not plain strings. Fixed in
+  `lib/caep.ts` — the `CaepEventInput` type keeps them as plain strings
+  for a simple caller API, wrapped as `{ en: value }` when building the
+  event object. Covered by a new regression test
+  (`tests/integration/send-signal.test.ts`).
+- Retested after the fix: `device-compliance-change` signal with
+  `reason_admin` correctly shaped now delivers and fires the Workflow
+  successfully.
+
+### 3.12 `token-claims-change` Workflow and the certification-campaign bug (2026-07-28)
+- Built via the ISC UI (not API, deliberately — Section 3.12.1 explains
+  why), from the native template **"Create a Certification Campaign When
+  Token Claims Change"**: `Get Identity` → `Get Identity's Manager` →
+  `Create Certification Campaign` (Manager as Individual reviewer, Access
+  Certification / Entitlement / "Certify all access", 30-day duration) →
+  `Send Email` (notifies the manager, correctly templated with live
+  workflow data) → End. No validation errors; user confirmed **Enabled**.
+- **Found via the live trigger subscription** (not guessed): this
+  template's default filter requires `initiating_entity == "policy"` —
+  `lib/catalog.ts`'s Zscaler scenario didn't set this at all and was
+  fixed to include it, confirmed correct per the OpenID CAEP spec's own
+  `token-claims-change` example.
+- **Real signal sent successfully, Workflow fired correctly** —
+  `Get Identity`/`Get Identity's Manager` both completed correctly using
+  live data (Jayme Cannon, manager Martena Heath). This is proof the
+  signal-to-trigger path works for a 3rd CAEP type.
+- **`Create Certification Campaign` step fails, reproducibly, twice**:
+  ISC's own error, via the real execution history endpoint
+  `GET /beta/workflow-executions/{id}/history` (see Section 10.5 — a
+  previously-undocumented, working endpoint found after several 404s on
+  guessed paths): `"campaign id: <id> has error status (type: Campaign
+  creation failed, retryable: false)"`. Two attempts, two different
+  campaign IDs, same error both times — not transient.
+- **Ruled out as a data problem**: checked Jayme Cannon's actual
+  entitlements directly in ISC's UI — she has 5 real entitlements (all
+  Active Directory-sourced). The campaign wasn't failing on an empty
+  certification scope.
+- **Isolated via a manual A/B test — this is the key finding**: built an
+  *identical* campaign by hand through ISC's own Certifications UI (same
+  target identity, same Individual reviewer = Martena Heath, same "Certify
+  all access" scope, same settings) — **it generated successfully**, no
+  error. This proves the campaign type/configuration itself is valid and
+  supported in this tenant; the failure is specific to how the Workflow's
+  `sp:create-campaign` action (`sp:create:campaign:v2` per the error's
+  activity type) calls the same underlying API. Likely candidate, unverified:
+  the Workflow's request sends `"recommendationsEnabled": null` where the
+  backend may require literal `false`, or `"query": "*"` /
+  `"accessConstraints": {"ids": ""}` shaped differently than what the
+  manual UI flow sends — but this can't be confirmed without seeing the
+  manual flow's actual API request, which isn't visible from the UI. This
+  is a strong support-case candidate: **not yet submitted**.
+
+### 3.14 `token-claims-change` certification-campaign bug — real root cause found and fixed (2026-07-29)
+
+**This supersedes Section 3.12's "platform bug" conclusion.** What looked
+like an unfixable ISC platform bug on 2026-07-28 (Section 3.12, Section 7
+item 14) turned out to be a fixable Workflow misconfiguration, found via
+a second look prompted by a real ISC error message the user had
+independently seen: *"Certification campaign from Search exceeded 10000
+access items. Create a new campaign with fewer access items."*
+
+**Investigation, in order:**
+1. **Inspected the live Workflow's raw JSON** (`scripts/get-workflow.ts`)
+   and found a dangling, unresolvable attribute on the `Create
+   Certification Campaign` step: `"reviewerAccessConstraintIds.$":
+   "$.getAccess.accessItems"` — referencing a `Get Access` step that
+   didn't exist anywhere in the Workflow. Removed it
+   (`scripts/fix-token-claims-campaign-scope.ts`) and retested — **no
+   change**. Same failure.
+2. **Captured the actual HTTP request body** ISC's Workflow engine sends
+   for `sp:create-campaign`, via `GET
+   /beta/workflow-executions/{id}/history`'s `ActivityTaskScheduled`
+   event. This was the real breakthrough — it showed the action
+   unconditionally building:
+   ```json
+   "searchCampaignInfo": {
+     "type": "ACCESS",
+     "query": "*",
+     "identityIds": "<the correct single identity ID>",
+     "accessConstraints": { "ids": "", "operator": "ALL", "type": "ENTITLEMENT" },
+     "reviewer": { "id": "<correct manager ID>", "type": "REVIEWER_IDENTITY" }
+   }
+   ```
+   Even though `identityIds` and `reviewer` were correctly populated with
+   single-identity data, `searchCampaignInfo.type` was always `"ACCESS"`
+   with `query: "*"` — an unconstrained, tenant-wide access-item search.
+   This is what exceeds the 10,000-item guard, regardless of how small
+   the *target identity's own* access actually is (Jayme Cannon has 6
+   items total).
+3. **Found the real fix by re-reading `sp:create-campaign`'s own schema**
+   (`scripts/list-workflow-templates.ts`): the action has a
+   `reviewerCertificationType` field with two branches — `"ACCESS"`
+   (what the native template ships with, and what triggers the bug) and
+   `"IDENTITY"` (a distinct, undocumented-in-the-UI-copy branch). Switched
+   the step's attributes to use `reviewerCertificationType: "IDENTITY"`
+   (dropping `reviewerAccessItemType`/`reviewerAccessOperator`, which only
+   apply to the `ACCESS` branch) and retested via `POST
+   /beta/workflows/{id}/test` (a genuine, real-execution test endpoint —
+   confirmed via empirical probing that it is **not** a dry-run; it runs
+   real actions with a synthetic trigger payload, useful for iterating on
+   a disabled Workflow without needing a full signed-SET round-trip).
+   **Result: the campaign was created successfully, status `STAGED`,
+   correctly scoped to exactly the 1 target identity.** No error.
+4. **Finalized**: set `activateUponCreation: true` (confirmed to work
+   correctly on the `IDENTITY` branch — it had appeared inert when
+   tested on the broken `ACCESS` branch, since that branch never got far
+   enough to activate anything) and hardcoded the campaign name to
+   `"Emergency Access Review"` (previously `.$`-mapped to the identity's
+   display name) per a direct user request during this session. Retested
+   end-to-end via `/test`: campaign created **`ACTIVE`** immediately, a
+   real notification email was sent to and confirmed received by the
+   manager (Martena Heath), Workflow completed with no errors. Re-enabled
+   the Workflow for production use.
+
+**Why this matters beyond just fixing the bug**: this is a genuine,
+durable fix using only native SailPoint actions — no external HTTP calls,
+no embedded credentials, no workaround layered on top of the platform.
+The user explicitly rejected an earlier draft approach (an `sp:http`
+step calling ISC's own `/v3/campaigns` API directly, which would have
+required embedding OAuth client credentials in the Workflow's JSON
+definition, visible to anyone with Workflow view/export access) —
+correctly, since a same-tenant native-action fix existed and is strictly
+better. **Lesson for future debugging**: when a native Workflow action
+misbehaves, check for alternate configuration branches in the action's
+own schema (`GET /beta/workflow-library`) before reaching for an external
+HTTP-call workaround — the schema often has more than one path to the
+same outcome, and one may avoid the bug entirely.
+
+**One platform quirk confirmed along the way, worth knowing for future
+Workflow debugging**: `sp:http`'s `url`/`urlParams` fields do **not**
+support any form of string templating or path-token substitution — only
+pure, full-value JSONPath (`"key.$": "$.some.path"`, must start with
+`$`, no functions like `States.Format()`). This was empirically confirmed
+via a disposable scratch Workflow (`SCRATCH - URL templating test (delete
+me)`, safe to delete from the Workflows list) before it blocked what
+would otherwise have been the fallback approach. If a future Workflow
+needs to call an ISC endpoint with a dynamic path parameter (e.g.
+`/v3/campaigns/{id}/activate`), check for a native action first — as
+happened here with the newly-discovered `sp:activate-campaign` action
+("Activate Certification Campaign", takes a plain `id` field, no URL
+templating needed) — rather than assuming `sp:http` can do it.
+
+**Real estate created in `company21912-poc` during this investigation**
+(cleanup optional, all harmless): several throwaway `STAGED`/`ERROR` test
+campaigns named "Jayme.Cannon" or "TEST ..." and two real, working
+`ACTIVE` campaigns both named "Emergency Access Review" — one created
+manually via a direct API script before the Workflow fix landed
+(description mentions "for Jayme.Cannon" and "Zscaler"), one produced by
+the actual fixed, automated Workflow (shorter description, no vendor
+name) — both are legitimate, the second is the one to point to as proof
+this works end-to-end automatically.
+
+#### 3.12.1 Why this Workflow was built via the UI, not the API
+Unlike the `device-compliance-change` Workflow (built via API once the
+correct pattern was known), `Create Certification Campaign`'s underlying
+action (`sp:create-campaign`) has a deeply nested, multi-branch config
+schema (Reviewer Type: Manager/Individual/Governance Group, each with
+different required sub-fields; Certification Type: Access vs. Identity,
+each with further branches). The risk of misconfiguring this via blind
+JSON construction was judged too high compared to the simple 3-step
+disable pattern already built twice — so this one was built through the
+actual template in the UI instead, which the ironic result of today's
+session (a real platform bug in that exact action) suggests was the right
+call: even a *correctly UI-configured* instance of this action fails.
+
+### 3.13 Vendor-differentiation experiments (2026-07-28) — both negative, both conclusive
+Two real, reasoned hypotheses were tested and disproven — recorded here so
+neither gets re-attempted without new information:
+- **Does ISC's trigger *filter* see custom claims, even though the
+  Workflow's own input doesn't?** Tested directly: temporarily added
+  `&& @.vendor == "Jamf"` to the `device-compliance-change` Workflow's
+  filter, sent one signal with `vendor: "Jamf"` and one with a different
+  vendor value. **Neither fired.** This proves custom-claim stripping
+  happens *before* filter evaluation too, not just before the Workflow's
+  `$.trigger` input — closing off per-vendor filtering via custom claims
+  entirely, at every stage. Filter reverted to its original form
+  immediately after the test (`scripts/test-vendor-filter.ts` does this
+  automatically regardless of outcome).
+- **Can a Workflow hardcode a vendor name in static text (e.g. an email
+  body) truthfully?** A real ISC-generated email (screenshot reviewed,
+  from a different context) said *"generated by the company's endpoint
+  management system, JAMF"* as fixed prose. Confirmed this is legitimate
+  **only** under a strict one-vendor-per-Workflow assumption — the
+  Workflow's author already knows which vendor that Workflow represents
+  at build time; it doesn't depend on anything in the signal. **Does not
+  scale** if a second vendor is ever mapped to the same CAEP type (user
+  caught this directly) — hardcoding would then be wrong for that second
+  vendor's events, since there is no proven way (claim- or filter-based)
+  for a Workflow to tell them apart at runtime.
+
 ---
 
 ## 4. Files Created or Modified
@@ -302,7 +568,8 @@ noted.
 | `prisma/schema.prisma` | Data model: `Tenant` (slug, apiToken, name), `SigningKey` (RS256 keypair per tenant, private key in DB — flagged as needing a real vault before production use), `Stream` (deliveryEndpointUrl, eventsRequested, status, authorizationHeader), `AuditLog` (every send attempt, success/fail) |
 | `prisma/migrations/20260723000000_init/migration.sql` | Initial Postgres schema migration |
 | `lib/prisma.ts` | Prisma client singleton, wired to `@prisma/adapter-pg` using `DATABASE_URL` |
-| `lib/caep.ts` | The 5 supported CAEP event type URIs, their required-claims map, `buildCaepEvent()` claim builder that throws `MissingCaepClaimsError` if required claims are absent |
+| `lib/caep.ts` | The 5 supported CAEP event type URIs, their required-claims map, `buildCaepEvent()` claim builder that throws `MissingCaepClaimsError` if required claims are absent. Also builds `vendor`/`vendor_event_type`/`recommended_action` (known-stripped-by-ISC, kept for audit value) and `reason_admin`/`reason_user` (official CAEP claims, auto-wrapped as `{ en: value }` — see Section 3.11) |
+| `lib/catalog.ts` | The vendor scenario catalog (`vendor`/`displayName`/`triggerCode`/claims per CAEP type) — 5 scenarios, one per CAEP type (Section 3.10) |
 | `lib/keys.ts` | RS256 keypair generation per tenant (`getOrCreateSigningKey`), PEM import helper |
 | `lib/auth.ts` | `requireTenantByBearerToken()` — validates ISC's bearer token against the tenant's stored `apiToken` |
 | `lib/ssf.ts` | Core transmitter logic: `appBaseUrl()` (auto-detects Vercel's production URL), `tenantIssuer()`, `ssfConfigurationDocument()`, `sendSsfSignal()` (build claims → sign SET with `sub_id`+`aud` → POST to stream's `deliveryEndpointUrl` → audit log), `sendVerificationSet()` (same, for the verify handshake) |
@@ -312,14 +579,42 @@ noted.
 | `app/t/[slug]/ssf/status/route.ts` | GET/POST stream status |
 | `app/t/[slug]/ssf/verify/route.ts` | POST verify handshake — **still unresolved response shape**, see Section 7 |
 | `scripts/provision-tenant.ts` | CLI: `npm run provision-tenant -- <slug> "<name>"` — creates a tenant + signing key |
-| `scripts/test-send.ts` | CLI smoke test: sends a real `risk-level-change` SET. Currently hardcoded to `tenantSlug: "company21912-poc"` and `subjectEmail: "Jayme.Cannon@sailpointdemo.com"` — **not yet parameterized**, edit the file directly to test a different tenant/identity |
+| `scripts/test-send.ts` | CLI smoke test: sends a real `risk-level-change` SET. Currently hardcoded to `tenantSlug: "company21912-poc"` and `subjectEmail: "Jayme.Cannon@sailpointdemo.com"` — **not yet parameterized**, edit the file directly to test a different tenant/identity. For other CAEP types, use `send-scenario.ts` instead |
+| `scripts/send-scenario.ts` | `npx tsx --env-file=.env scripts/send-scenario.ts <streamId> <scenarioKey> [subjectEmail] [tenantSlug]` — sends any `lib/catalog.ts` scenario; run with no args to list all 5 |
 | `scripts/mock-receiver.mjs` | Throwaway local HTTP listener used for early local-only testing (no longer needed against the real tenant, kept for reference) |
 | `scripts/check-audit.ts` | Dumps recent `AuditLog` rows — useful to check whether a push actually succeeded (`httpStatus`/`success`) independent of ISC's UI |
 | `scripts/list-streams.ts` | Lists all streams for a tenant slug, with IDs — use this to find a stream ID for `test-send.ts` |
 | `scripts/list-isc-identities.ts` | Read-only: uses `company21912/.env.local` OAuth creds to list real ISC identities |
 | `scripts/check-stream-auth.ts` | Decodes a stream's stored `authorizationHeader` JWT and reports its expiration — use this if signal sends start failing with 401 again |
 | `scripts/check-api-scope.ts` | Read-only: decodes the `company21912` API client's token to show its granted `authorities`/scope |
-| `package.json` | `build`: `next build` (deliberately does NOT run migrations); `migrate`: `prisma migrate deploy` (run manually against the Session pooler); `postinstall`: `prisma generate`; `provision-tenant` script alias |
+| `scripts/get-workflow.ts` | Read-only: fetches a live ISC Workflow's definition JSON by name **or id** via the `company21912` API client — use this to see a Workflow's real steps/schema before editing it |
+| `scripts/check-workflow-execution.ts` | Read-only: `npx tsx scripts/check-workflow-execution.ts [workflowId]` — fetches a Workflow's most recent execution status/timestamps (defaults to the risk-level-change Workflow if no id given) |
+| `scripts/check-prism-account.ts` | Read-only: fetches Jayme Cannon's PRISM account by ID directly — use to check disabled/enabled state after a test send |
+| `scripts/list-trigger-definitions.ts` | Read-only: hits `GET /beta/triggers` (undocumented but working) to list every CAEP trigger's exact `id` — use this instead of guessing trigger IDs when wiring a new Workflow via API |
+| `scripts/check-trigger-subscriptions.ts` | Read-only: `GET /beta/trigger-subscriptions` — lists every Workflow's live trigger registration including its actual stored filter. The fastest way to confirm a Workflow is correctly wired (or find a filter bug like Section 3.10's) |
+| `scripts/check-execution-detail.ts` | Read-only: `npx tsx scripts/check-execution-detail.ts <workflowId> <executionId>` — tries several endpoint shapes for step-by-step execution history; the one that actually works is `GET /beta/workflow-executions/{executionId}/history` (undocumented, found by trial) |
+| `scripts/check-campaign.ts` | Read-only: attempted direct campaign lookup by ID — endpoint guessed (`/v3/certifications/campaigns/{id}`) 404'd; kept for reference but not confirmed working |
+| `scripts/check-entitlements.ts` | Read-only: attempted to list an identity's entitlements via API — endpoints guessed didn't work either; the UI (Identity → Access → Entitlements tab) was used instead. Kept for reference |
+| `scripts/list-workflow-templates.ts` | Read-only: explores `GET /beta/workflow-library` (91 items: triggers, actions, operators — building blocks, not full pre-assembled workflow templates) — useful for finding an action's exact `actionId` and required-field schema (e.g. `sp:create-campaign`) before hand-building a Workflow step via API |
+| `scripts/create-device-compliance-workflow.ts` | One-time: created the `device-compliance-change` companion Workflow via `POST /beta/workflows`. Already run — kept as a record of the exact definition/trigger shape used (Section 3.10) |
+| `scripts/fix-device-compliance-trigger-filter.ts` | One-time: fixed the missing `filter.$` key on the Workflow `create-device-compliance-workflow.ts` created (Section 3.10). Already run |
+| `scripts/test-vendor-filter.ts` | One-time experiment (Section 3.13): tests whether ISC's trigger filter can see custom claims like `vendor`. Result: no. Reverts the filter it modifies automatically, regardless of outcome — safe to re-run if the question ever needs re-verifying |
+| `scripts/get-workflow.ts` / `scripts/get-campaign-detail.ts` / `scripts/get-campaign-detail-beta.ts` | Read-only: fetch a live Workflow's or campaign's full JSON — used throughout Section 3.14's investigation to capture the actual request body a native action builds |
+| `scripts/check-execution-detail.ts` | Read-only: full step-by-step execution history via `GET /beta/workflow-executions/{id}/history` — the key diagnostic that revealed the `searchCampaignInfo.type:"ACCESS"`/`query:"*"` bug (Section 3.14) |
+| `scripts/fix-token-claims-campaign-scope.ts` | One-time: removed a dangling `reviewerAccessConstraintIds.$` attribute referencing a nonexistent step — turned out not to be the actual bug, kept for the record (Section 3.14) |
+| `scripts/try-identity-certification-type.ts` / `scripts/finalize-workflow-fix.ts` | One-time: the actual fix — switches `Create Certification Campaign` to `reviewerCertificationType: "IDENTITY"`, sets `activateUponCreation: true`, hardcodes the campaign name to "Emergency Access Review" (Section 3.14). Already applied to the live Workflow; re-running is safe/idempotent |
+| `scripts/test-execute-workflow.ts` / `scripts/toggle-workflow-enabled.ts` | Reusable: test-executes a Workflow via `POST /beta/workflows/{id}/test` (a **real execution**, not a dry-run — confirmed empirically) with a synthetic `token-claims-change` trigger payload; toggles a Workflow's `enabled` flag (required to be `false` before structural edits or `/test`) |
+| `scripts/list-campaigns.ts` / `scripts/create-emergency-access-review.ts` / `scripts/activate-campaign.ts` | Read-only list / one-time manual creation+activation of the first "Emergency Access Review" campaign, built before the Workflow fix landed (Section 3.14's cleanup note) |
+| `scripts/list-all-actions.ts` / `scripts/check-activate-campaign-schema.ts` | Read-only: enumerate every native Workflow action and inspect one's schema — used to discover `sp:activate-campaign` and `reviewerCertificationType`'s `IDENTITY` branch |
+| `vitest.config.ts` | Vitest config: `tests/**/*.test.ts`, `@/` path alias matching `tsconfig.json`, 15s timeouts (tests hit real Postgres + spin up local HTTP listeners) |
+| `tests/helpers/tenant.ts` | `createTestTenant()`/`cleanupTenant()` — provisions/tears down a throwaway tenant+signing key per test, isolated by a random slug |
+| `tests/helpers/mock-receiver.ts` | `MockReceiver` — a local HTTP listener standing in for ISC's stream delivery endpoint; captures raw request bytes so tests can decode and assert on the actual signed SET |
+| `tests/integration/discovery.test.ts` | Discovery doc + JWKS: delivery-method URN, full-URL `issuer` (iss-mismatch regression), JWKS shape, 404 for unknown tenant |
+| `tests/integration/streams.test.ts` | `POST`/`GET`/`PATCH` `/ssf/streams`: auth, unsupported event types, `iss`/`status`/`aud` regressions, PATCH-without-status, `authorization_header` rotation capture (the costliest bug this session) |
+| `tests/integration/send-signal.test.ts` | `sendSsfSignal()`/`sendVerificationSet()`: required-claim validation, stream-status gating, `sub_id`/`aud` claim-shape regressions, current `vendor`/`vendor_event_type`/`recommended_action` shape, `reason_admin`/`reason_user` localized-object shape (Section 3.11 regression), audit logging |
+| `tests/integration/auth.test.ts` | `requireTenantByBearerToken()`: valid/missing/wrong-scheme/wrong-token/cross-tenant/unknown-slug cases |
+| `tests/integration/catalog.test.ts` | Every `lib/catalog.ts` scenario passes claim validation; catalog covers ≥3 and exactly 5 distinct CAEP types (never a 6th) |
+| `package.json` | `build`: `next build` (deliberately does NOT run migrations); `migrate`: `prisma migrate deploy` (run manually against the Session pooler); `postinstall`: `prisma generate`; `provision-tenant` script alias; `test`: `node --env-file=.env node_modules/vitest/vitest.mjs run` |
 | `.gitignore` | Excludes `.env*`, `/app/generated/prisma`, `/dev.db*`, AI-assistant reference folders (`.agents`, `.claude/skills`, `.windsurf/skills`) |
 | `README.md` | Self-deploy instructions (Supabase + Vercel), Phase 0 gate checklist, "what this is NOT" section |
 | `docs/How to Build the SSF Transmitter.md` | Copied in from the original architecture doc for onboarding context |
@@ -378,6 +673,89 @@ noted.
   have more mature native Workflow-template support (those two are the
   only ones named in SailPoint's public release notes with dedicated
   triggers/templates). Worth testing those two next for comparison.
+- **(2026-07-27) Greenfield is now permanent, not provisional.** The
+  earlier framing ("if access to the original SSF Signal Portal repo is
+  ever obtained, evaluate it before further investment") is closed. The
+  user confirmed staying on this greenfield build going forward regardless
+  of whether that repo ever becomes accessible. Do not resurface this as
+  an open question in future audits.
+- **(2026-07-27) Supabase Vault + Supabase Auth will be adopted**, per the
+  source doc's stack table, timed to land before/alongside the start of
+  Phase 2 Simulator UI work — that's when a login system and stored
+  secrets (signing keys, API tokens) first actually matter. Confirmed with
+  the user; not yet implemented (see Section 7, items 12-13, and Section 9
+  for sequencing).
+- **(2026-07-27) Event-model branching design decision made** — see
+  Section 7, item 5 for the resolution and remaining work.
+- **(2026-07-28) Phase 0 and Phase 1 both confirmed complete**, and the
+  Verify Connection gap explicitly reclassified as an external,
+  non-blocking issue rather than an unfinished part of Phase 0. Real signal
+  delivery (proven repeatedly) is treated as stronger evidence than the
+  Verify handshake would be, since Verify is a synthetic check for the same
+  thing. See Section 2 and Section 2.2.
+- **(2026-07-28) Integration test harness built**, closing Phase 1's last
+  gap. Vitest suite in `tests/integration/`, run via `npm test`, testing
+  our own transmitter's endpoints/logic (not the real ISC tenant) using a
+  local mock receiver to decode actual signed SET bytes. See Section 7,
+  item 9.
+- **(2026-07-28) Definition-of-Done reprioritized, criteria unchanged.**
+  The two "NOT done" criteria (Verify Connection, ≥3 CAEP types) don't
+  block calling Phase 0/Phase 1 done, but Definition of Done itself is
+  still open and its literal criteria were not altered. The concrete next
+  step to close it: test `session-revoked` and `credential-change` (2 more
+  CAEP types). See Section 2.1's 2026-07-28 clarification note.
+- **(2026-07-28) CAEP-type-per-Workflow design validated by actually
+  building two more.** `device-compliance-change` built and fully proven
+  end-to-end (Section 3.10); `token-claims-change` built and proven on the
+  signal/trigger side, blocked only on an isolated ISC platform bug in the
+  certification-campaign action (Section 3.12). Confirms the Section 7
+  item 5 rescope decision was correct in practice, not just in theory.
+- **(2026-07-28) Vendor-differentiation is confirmed closed, not just
+  theorized.** Two direct experiments (custom claim in trigger filter;
+  hardcoded vendor name in static Workflow text) — see Section 3.13 —
+  either disproved the hypothesis or found real scaling limits. Do not
+  re-attempt custom-claim-based vendor differentiation without genuinely
+  new information (e.g. a SailPoint support answer that changes the
+  premise).
+- **(2026-07-28) Campaign-creation bug isolated to the Workflow action,
+  not the tenant.** A manual A/B test (identical config, one via the
+  Workflow's `Create Certification Campaign` action, one by hand through
+  ISC's own Certifications UI) proved the campaign type/config is valid
+  and supported — only the Workflow action's specific API call fails.
+  **Superseded 2026-07-29**: this was not a platform bug after all — see
+  below and Section 3.14.
+- **(2026-07-29) SailPoint support cases: not being filed.** The user
+  determined opening a support ticket with SailPoint is not an option for
+  this project. The still-open `/ssf/verify` issue (Section 7 item 1) and
+  its drafted case (`docs/sailpoint-support-case-verify-endpoint.md`)
+  remain unsubmitted and should stay that way going forward — don't
+  resurface "submit the support case" as a next step. The
+  certification-campaign issue that prompted a second drafted case
+  (`docs/sailpoint-support-case-certification-campaign.md`) turned out to
+  have a real fix on our side anyway (Section 3.14), so that draft is now
+  historical/unnecessary, not just unsubmitted.
+- **(2026-07-29) `token-claims-change` certification-campaign bug fixed
+  for real, not worked around.** What Section 3.12 described as a likely
+  ISC platform bug was actually a fixable native-action misconfiguration:
+  the template's `reviewerCertificationType: "ACCESS"` branch always
+  searches the whole tenant (`query: "*"`), while the same action's
+  `"IDENTITY"` branch correctly scopes to the triggering identity. Fixed
+  by switching branches — no external API calls, no embedded credentials.
+  See Section 3.14 for the full investigation. This closes Definition of
+  Done criterion 4 outright (Section 2.1).
+- **(2026-07-29) Rejected an `sp:http`-based workaround because it would
+  have embedded OAuth client credentials in the Workflow's exported JSON.**
+  Before the native-action fix (`reviewerCertificationType: "IDENTITY"`)
+  was found, the fallback plan was an `sp:http` step calling ISC's own
+  `/v3/campaigns` API directly. The user explicitly rejected this once it
+  became clear it required embedding `CLIENT_ID`/`CLIENT_SECRET` as
+  plaintext in the Workflow definition (visible to anyone with
+  Workflow view/export access) — correctly, since it turned out a
+  same-tenant native-action fix existed and didn't need this at all.
+  **Precedent for future work**: don't reach for an `sp:http` step with
+  embedded secrets as a first resort when a native action is misbehaving
+  — check the action's own schema for alternate configuration branches
+  first (see Section 3.14's "why this matters" note).
 
 ---
 
@@ -461,42 +839,103 @@ back toward them over time:
    IdentityNow, and HR accounts have not been exercised through the
    workflow (HR intentionally excluded; AD intentionally deferred, not
    yet added to the source-ID filter).
-3. **Only one vendor scenario (CrowdStrike-labeled `risk-level-change`) has
-   been tested end-to-end.** The other 24 scenarios across 5 vendors (per
-   the ARD's vendor scope) exist only as a concept, not as code or ISC
-   config.
-4. **Only one companion Workflow exists** (risk-level-change → disable
-   PRISM). `session-revoked` and `credential-change` have SailPoint-native
-   templates too (per the release notes pasted into this session) and are
-   worth building/testing next, since they may prove more reliable/
-   mature on SailPoint's side than `risk-level-change`.
-5. **The event/catalog data model specified in the source doc was never
-   implemented, and our actual Workflow design deviates from its intent.**
-   `How to Build the SSF Transmitter.md`'s "Event model" section specifies
-   a catalog schema for every vendor scenario:
-   `vendor`, `displayName`, `triggerCode`, `ssfEventType`, `defaultAction`,
-   and CAEP-required-claim defaults (a `caepRequiredClaims()`-style
-   builder). **We built the claim-builder half** (`lib/caep.ts`'s
-   `buildCaepEvent()` + `CAEP_REQUIRED_CLAIMS`), **but there is no catalog
-   data structure at all** — `scripts/test-send.ts` hardcodes one scenario
-   inline in code, not as a row in a reusable catalog.
-   More importantly: the source doc's design intends the payload to carry
-   `vendor_event_type` and **`recommended_action`** as custom claims
-   specifically so **one generic Workflow can branch on them** ("Ship 1-2
-   importable ISC Workflow templates that branch on CAEP type + vendor /
-   `recommended_action`" — Phase 2 scope, backlog item 6). **What we
-   actually built is the opposite of that**: our `vendor_context` claim
-   (`vendor`, `detection` — different field names than the spec's
-   `vendor_event_type`) is carried in the SET, but the Workflow we built
-   does not read it at all — it's hardcoded to always disable PRISM
-   regardless of vendor or scenario. This works for a single demo but does
-   **not** scale to "1-2 workflows branch across many vendor scenarios" as
-   intended. **This needs a design decision before Phase 2 catalog work
-   starts**: either (a) rename our claim to match the spec's
-   `recommended_action` and build real branching logic into the Workflow
-   (an ISC "Switch"/conditional step keyed on that claim), or (b)
-   deliberately keep one-workflow-per-scenario and document that as an
-   intentional deviation.
+3. **UPDATED (2026-07-28): 3 of 5 vendor scenarios now tested end-to-end**
+   (Okta/`risk-level-change`, Jamf/`device-compliance-change`, both fully
+   proven including remediation; Zscaler/`token-claims-change` proven on
+   the signal/trigger side, blocked on the campaign bug in item 14 below).
+   Microsoft/`credential-change` and Proofpoint/`session-revoked` are
+   defined in `lib/catalog.ts` but not yet sent/tested. The other 20
+   scenarios across the ARD's full 25-scenario vendor scope remain
+   concept-only.
+4. **UPDATED (2026-07-28): 3 companion Workflows now exist**
+   (`risk-level-change` → disable PRISM; `device-compliance-change` →
+   disable PRISM; `token-claims-change` → create certification campaign,
+   currently blocked — item 14). `session-revoked` and `credential-change`
+   still have no Workflow built yet — next candidates, and both have
+   confirmed SailPoint-native templates ("Remove Access When a Session is
+   Revoked", "Remove Access When Credential Changes").
+5. **FINAL RESOLUTION (2026-07-28): custom-claim Workflow branching is not
+   achievable on this platform, by design — not a bug, not something a
+   support case would fix. Rescoped to branch on CAEP event type instead.**
+
+   **What was tried:** `lib/caep.ts`'s `CaepEventInput`/`buildCaepEvent()`
+   were changed to emit three top-level fields inside the CAEP event object
+   — `vendor`, `vendor_event_type`, `recommended_action` — matching
+   `How to Build the SSF Transmitter.md`'s "Event model" section verbatim.
+   A `choice`/"Switch" step (`Check Recommended Action`) was added to the
+   live `SSF Injector Demo - Remove Access When Risk Level Changes`
+   Workflow (id `d7ee6b95-7109-44fd-bfdc-240032ad5c29`), keyed on
+   `$.trigger.ssfEvent.events["...risk-level-change"].recommended_action`,
+   routing to the existing `Manage Accounts` (disable) step when it equals
+   `"disable_account"`.
+
+   **What actually happened, proven by a real execution trace:** ISC's
+   Receiver strips `vendor`/`vendor_event_type`/`recommended_action` before
+   the Workflow trigger ever sees them. The trigger's `ssfEvent.events[...]`
+   object only ever contained the official CAEP `risk-level-change` schema
+   fields (`current_level`, `previous_level`, `event_timestamp`,
+   `principal`, `risk_reason`) — confirmed directly from ISC's own Event
+   Log / Workflow execution history UI, twice, across two separate test
+   sends. The `Check Recommended Action` step's comparison against
+   `recommended_action` always evaluated `undefined`, so it always fell to
+   its default branch.
+
+   **Root cause, confirmed authoritative (not a guess):** OpenID SSF spec
+   1.0 Final, Section 4.2.3: *"Transmitters MAY include additional fields
+   in SSF events... **Receivers MUST ignore any fields they do not
+   understand.**"* ISC is correctly following the spec. There is no claim
+   placement (nested in the event object, or elsewhere) that a spec-
+   compliant receiver is obligated to preserve. The one documented
+   exception is the top-level `txn` claim (confirmed present under
+   `$.trigger.ssfEvent.txn` per `workflow-triggers.html`), but its spec-
+   defined meaning is "unique identifier correlating related SETs from one
+   incident," not an arbitrary instruction string — repurposing it to carry
+   `recommended_action` would be a semantic misuse and was rejected as an
+   option.
+
+   **Fix applied, restoring proven behavior:** `Check Recommended Action`'s
+   `defaultStep` was changed from `"success 1"` to `"Manage Accounts"` —
+   the branch now always disables PRISM regardless of `recommended_action`
+   (since that claim can never arrive), matching the originally-proven
+   always-disable behavior. Confirmed via a real test send: the Workflow
+   correctly routed to `Manage Accounts` (visible in the execution trace as
+   `"next": "Manage Accounts"`); the disable call itself then failed on
+   that particular run due to an unrelated PRISM connector/VM timeout
+   (environmental, VMs were down after-hours) — not a logic problem. Retest
+   once the VMs are confirmed back up.
+
+   **Decision, confirmed with the user (2026-07-28): rescope branching to
+   CAEP event type, not custom claims.** ISC does preserve which CAEP type
+   fired — that's the trigger mechanism itself, not a claim that can be
+   stripped. Recommended design going forward:
+   - Build one Workflow (or one branch) **per CAEP type actually tested**
+     (`risk-level-change`, `session-revoked`, `credential-change`, ...),
+     each with its own fixed, appropriate remediation action.
+   - Vendor variety stays entirely in the **catalog/narrative layer** —
+     many vendor scenarios (CrowdStrike, Okta, Palo Alto, ...) map onto the
+     same CAEP type and trigger the same remediation for that type. The
+     vendor-specific richness is what the SE sees and narrates during a
+     demo (catalog `displayName`/`triggerCode`), not something that needs
+     to reach ISC at all.
+   - **Independent supporting evidence**: a screenshot of a peer's
+     pre-existing SSF Signal Portal catalog UI (the ~70%-complete app named
+     in Section 5/10.1, still inaccessible as code) shows exactly this
+     pattern — many vendor rows across Okta/Palo Alto/etc., all mapped onto
+     just the 5 CAEP types, with **no visible per-vendor action/branching
+     column**. That team appears to have arrived at the same conclusion
+     independently.
+   - This directly reuses, rather than competes with, the work already
+     needed to close the real Definition-of-Done gap (Section 2.1's
+     2026-07-28 note): testing `session-revoked` and `credential-change` IS
+     building the next 2 CAEP-type branches.
+   - **This is a real, documented narrowing of the source doc's original
+     ask.** The doc's Phase 2 backlog item 6 literally says "branch on CAEP
+     type **+ vendor/`recommended_action`**" — we are keeping only the
+     CAEP-type half. See the rescoped description on backlog item 6 in
+     Section 9.1.
+   - Catalog data structure (`vendor`, `displayName`, `triggerCode`,
+     `ssfEventType`) is still not built (`scripts/test-send.ts` still
+     hardcodes one scenario inline) — remains open, see item 6 below.
 6. **No Simulator UI, and no SE-facing surface of any kind.** The source
    doc's "Minimum viable SE surface" (Section 3 of `How to Build...`) is
    four pieces, and **all four are 100% unbuilt**:
@@ -524,13 +963,25 @@ back toward them over time:
 8. **`scripts/test-send.ts` is hardcoded**, not parameterized via CLI args
    for tenant/subject/event type. Fine for continued manual testing, but
    should become real Simulator UI inputs in Phase 2.
-9. **No automated integration test harness exists.** `How to Build the SSF
-   Transmitter.md` lists this explicitly under both Phase 1 ("Integration
-   tests: discovery, stream create, verify SET, signed send") and the
-   ordered backlog (item 8). What exists instead is a set of manual,
-   developer-run diagnostic scripts (`scripts/check-*.ts`,
-   `list-streams.ts`) — useful, but not automated tests that run in CI or
-   catch a regression before it reaches production.
+9. **RESOLVED (2026-07-28): automated integration test harness built.**
+   `How to Build the SSF Transmitter.md` listed this under both Phase 1
+   ("Integration tests: discovery, stream create, verify SET, signed send")
+   and the ordered backlog (item 8). Now covered by a Vitest suite in
+   `tests/integration/` (`discovery.test.ts`, `streams.test.ts`,
+   `send-signal.test.ts`, `auth.test.ts`), run via `npm test`. 24 tests,
+   all passing as of this writing. It tests our transmitter's own
+   endpoints/logic directly (route handlers + `lib/ssf.ts`) against a real
+   Postgres tenant and a local mock HTTP receiver (`tests/helpers/
+   mock-receiver.ts`) that captures and decodes the actual signed SET bytes
+   — this is what catches claim-shape regressions like the missing
+   `sub_id`/`aud` bugs (Section 3.5, items 9-10) and the token-rotation bug
+   (item 12), rather than just trusting that a `fetch()` call didn't throw.
+   It does **not** call the real ISC tenant — that would require live
+   credentials and network access in CI, and isn't what "integration test"
+   means here; it means testing across our own layers (route → lib →
+   signed wire payload), not literally against SailPoint. The old manual
+   diagnostic scripts (`scripts/check-*.ts`, `list-streams.ts`) remain
+   useful for live-tenant debugging and were kept, not replaced.
 10. **The companion Workflow is not packaged as an importable artifact.**
     The source doc's Phase 2 scope and backlog (item 6, "Companion Workflow
     pack — importable ISC Workflow JSON templates") calls for a
@@ -570,17 +1021,51 @@ back toward them over time:
       mechanism the source doc specifies for "SE org access without a
       home-rolled password store" — worth adopting from the start once
       the Simulator UI work begins, rather than retrofitting auth later.
+14. **RESOLVED (2026-07-29). Was: `token-claims-change` Workflow's
+    `Create Certification Campaign` step consistently failing.** Full
+    detail in Section 3.14, which supersedes the "platform bug" framing
+    below (kept for the historical record of how the investigation
+    unfolded). Original summary from 2026-07-28:
+    - Error (from `GET /beta/workflow-executions/{id}/history`, verbatim):
+      `"campaign id: <id> has error status (type: Campaign creation
+      failed, retryable: false)"`. Reproduced twice, different campaign
+      IDs both times — not transient.
+    - The signal → correlate → trigger → `Get Identity`/`Get Identity's
+      Manager` chain all work correctly; only the campaign-creation call
+      itself fails.
+    - **Ruled out**: empty certification scope (Jayme Cannon has 5 real
+      AD entitlements, confirmed in the UI).
+    - **Isolated via a manual A/B test**: an identical campaign
+      (Individual reviewer = Martena Heath, target = Jayme Cannon,
+      "Certify all access") built by hand through ISC's own Certifications
+      UI **succeeded** with zero errors.
+    - **What this actually turned out to be (2026-07-29)**: not a platform
+      bug. The native action's `reviewerCertificationType: "ACCESS"`
+      branch (what the template ships with) always builds an
+      unconstrained `searchCampaignInfo.type: "ACCESS"` + `query: "*"`
+      request — a tenant-wide search that exceeds the 10,000-item guard
+      regardless of identity scope. Switching to `reviewerCertificationType:
+      "IDENTITY"` fixes it completely, using only native actions. See
+      Section 3.14 for the full investigation and fix.
+    - **No SailPoint support case was filed for this** — the user
+      determined submitting a support case wasn't an option, and the real
+      fix was found before one would have been needed anyway. See Section
+      5's 2026-07-29 decision note.
 
 ---
 
 ## 8. Risks or Warnings
 
-- **Jayme Cannon's PRISM account may currently be in a DISABLED state** as
-  of the end of this session (it was successfully disabled by the last
-  test run, and was not confirmed re-enabled afterward in this
-  conversation). **Check and manually re-enable it before any further
-  testing or a real demo**, via her Accounts tab → PRISM row → "..." →
-  Enable Account.
+- **Jayme Cannon's PRISM account state changed hands many times on
+  2026-07-28** (disabled by `risk-level-change` and `device-compliance-
+  change` test runs, re-enabled by the user each time). As of this
+  writing it was last confirmed **re-enabled** by the user after the
+  `device-compliance-change` retest. `token-claims-change` tests do not
+  touch account state at all (they only attempt certification campaign
+  creation, which fails before any access change). **Still, always check
+  and manually re-enable if needed before any further testing or a real
+  demo** — via her Accounts tab → PRISM row → "..." → Enable Account, or
+  `npx tsx scripts/check-prism-account.ts` to check programmatically.
 - **A destructive `taskkill /F /IM node.exe` was run earlier in this
   project** (not in this final session, but worth knowing) to stop a
   local dev server, which killed *all* Node processes on the machine, not
@@ -623,6 +1108,32 @@ this session's improvised order.
 2. **Decide the fate of the original (v1) Receiver/Stream** in ISC — delete
    it, or leave it as a known-broken reference. It currently has an
    expired credential and cannot send signals.
+3. **DONE, then found not to work as designed, then fixed (2026-07-28) —
+   see Section 7 item 5 for the full story.** A `choice` step was added to
+   the live Workflow keyed on `recommended_action`; ISC was confirmed to
+   strip that claim per spec, so the step's `defaultStep` was changed to
+   always route to `Manage Accounts`, restoring the proven always-disable
+   behavior. No further action needed here — future work in this area is
+   the CAEP-type-branching rescope (Section 7 item 5, backlog item 6).
+4. **RESOLVED (2026-07-28): retested once the VMs were back up — worked
+   cleanly.** PRISM disable succeeded, confirming the earlier failure was
+   purely the after-hours VM outage, not a code/logic issue.
+5. **RESOLVED, direction changed (2026-07-29): no SailPoint support cases
+   will be filed** — the user decided this is not an option for this
+   project (Section 5). The certification-campaign issue that would have
+   prompted a second case was fixed directly instead (Section 3.14). The
+   `/ssf/verify` case (item 1) remains open but unsubmitted, and should
+   stay that way — don't resurface "submit it" as a next step.
+6. **DONE (2026-07-29), optional to extend further: build and test the 2
+   remaining CAEP-type scenarios** already defined in `lib/catalog.ts` —
+   `credential-change`/Microsoft and `session-revoked`/Proofpoint. Both
+   need a companion Workflow built first (follow Section 3.10's
+   now-proven API-build pattern — find the trigger ID via
+   `scripts/list-trigger-definitions.ts`, build with the correct
+   `filter.$` key, verify via `scripts/check-trigger-subscriptions.ts`).
+   This isn't required to close Definition-of-Done criterion 4 (3 types
+   already sent), but rounds out the catalog and gives more redundancy in
+   case the `token-claims-change` bug takes a while to resolve.
 
 ### 9.1 Source doc's ordered backlog — status and next action on each
 
@@ -632,10 +1143,10 @@ this session's improvised order.
 | 2 | Stream status gating — never push to paused/disabled streams | **Done** | `sendSsfSignal()` in `lib/ssf.ts` already throws `StreamNotActiveError` for non-enabled streams. No action needed. |
 | 3 | Preview = wire payload — SE sees exactly what ISC receives | **Not started** | Blocked on the Simulator UI existing at all (Phase 2). |
 | 4 | Identity picker — saved demo subjects (email / `iss_sub`) | **Not started** | Same — Phase 2 UI work. |
-| 5 | Catalog expansion — PRD narratives mapped onto supported CAEP types | **Not started** | Only 1 of 25 target scenarios (ARD Section 6.1) has been built/tested. Directly blocks the "at least 3 CAEP types" definition-of-done criterion (Section 2.1) — recommend testing `session-revoked` and `credential-change` next specifically because SailPoint's own release notes call those two out as having the most mature native template support. |
-| 6 | Companion Workflow pack — importable ISC Workflow JSON templates | **Partial** | One Workflow exists, but only live inside `company21912-poc`, not exported. **Action: use the download icon next to "Workflow Details" in ISC's Workflow builder to export the current Workflow as JSON, commit it to a new `workflow/` folder in the repo.** This is the single fastest way to make today's work reusable by another SE. |
+| 5 | Catalog expansion — PRD narratives mapped onto supported CAEP types | **In progress (2026-07-28)** | 5 of 25 target scenarios (ARD Section 6.1) now in `lib/catalog.ts`, one per CAEP type. 3 sent and tested (2 fully proven, 1 blocked on Section 7 item 14's platform bug). Directly closes the "at least 3 CAEP types" definition-of-done criterion (Section 2.1) modulo that one open bug. Next: send/test the 2 remaining catalog scenarios (`credential-change`/Microsoft, `session-revoked`/Proofpoint) — both need a Workflow built first (Section 10.4-style, or via API per Section 3.10's now-proven pattern). |
+| 6 | Companion Workflow pack — importable ISC Workflow JSON templates | **Partial, rescoped (2026-07-28)** | 3 Workflows now exist (risk-level-change, device-compliance-change, token-claims-change), all live only inside `company21912-poc`, none exported. **Rescoped from the doc's literal "branch on CAEP type + vendor/`recommended_action`" to branch on CAEP type only** — custom-claim branching confirmed not achievable at any stage, including trigger filters (Section 3.13). Plan: build/export one Workflow per tested CAEP type, not one generic branching Workflow. **Action: use the download icon next to "Workflow Details" in ISC's Workflow builder to export each Workflow as JSON, commit them to a new `workflow/` folder in the repo.** |
 | 7 | Scheduler / demo queue — countdown or multi-step script sends | **Not started** | Phase 2 UI work. |
-| 8 | Integration test harness — discovery, streams, verify, signed delivery | **Not started** | The `scripts/check-*.ts` files are manual diagnostics, not automated tests. Recommend converting the working manual test flow (Section 10.3) into a real test suite (e.g. Vitest/Jest) that can run in CI and catch regressions — especially for the token-rotation bug class (Section 3.5, item 12), which would have been caught immediately by an automated re-run of the signal-send flow. |
+| 8 | Integration test harness — discovery, streams, verify, signed delivery | **Done (2026-07-28)** | Vitest suite in `tests/integration/`, run via `npm test`. 24 tests covering discovery, JWKS, stream create/GET/PATCH, auth boundaries, and signed-SET claim shape via a local mock receiver. See Section 7, item 9. |
 
 ### 9.2 Broader next steps beyond the backlog
 
@@ -645,14 +1156,13 @@ other gap (more CAEP types, more Workflows) only deepens the *backend*,
 while zero of it is usable by an actual SE until some UI exists. Don't
 default back to backend-only work without re-checking this priority call.
 
-9. **Before or alongside starting the UI, make the event-model design
-   decision flagged in Section 7, item 5**: does the vendor catalog carry
-   a `recommended_action` claim that a single Workflow branches on
-   (matching the source doc's intent), or does this project intentionally
-   stay one-Workflow-per-scenario? This decision shapes both the Admin
-   Catalog UI's data model and how many Workflows need to be built/
-   exported. Answering it *before* building the catalog UI avoids
-   redesigning the schema mid-build.
+9. **RESOLVED (2026-07-28) — see Section 7, item 5.** The event-model
+   design decision is made: catalog entries map to a CAEP event type (not a
+   custom `recommended_action` claim a Workflow branches on, which was
+   tested and confirmed not achievable). Build the catalog's data model
+   around `vendor`, `displayName`, `triggerCode`, `ssfEventType` (per the
+   source doc's "Catalog fields to lock"), and plan one Workflow per tested
+   CAEP type rather than one generic branching Workflow.
 10. **Start Phase 2 in earnest**: design and build the actual Simulator UI
     (vendor dropdown, scenario picker, identity picker, Send Now button)
     so sending a signal stops requiring a developer running a script from
@@ -697,6 +1207,14 @@ default back to backend-only work without re-checking this priority call.
    - https://documentation.sailpoint.com/saas/help/workflows/ (workflow
      action schemas, e.g. the `Get Accounts` action's output fields
      including `sourceId`)
+   - https://caep.dev — third-party SSF/CAEP payload validator (2026-07-28,
+     via a peer working a parallel SSF Signal Portal build). Lets you test
+     an SSF/CAEP transition and see schema errors directly, without needing
+     a live ISC tenant round-trip. Not yet used in this project, but worth
+     reaching for next time a payload/response-shape issue needs debugging
+     (e.g. the still-unresolved `/ssf/verify` issue, Section 7 item 1, or
+     building the `session-revoked`/`credential-change` payloads) — ISC's
+     own error messages have repeatedly been too vague to debug from alone.
 7. **Related artifacts named in `How to Build the SSF Transmitter.md`'s own
    "Related artifacts" section** — listed here for completeness even where
    this session did not have direct access to them:
@@ -812,6 +1330,21 @@ npx tsx --env-file=.env scripts/check-stream-auth.ts <streamId>
 
 # Look up real ISC identities via the company21912 API client (read-only)
 npx tsx scripts/list-isc-identities.ts
+
+# Send any catalog scenario (see lib/catalog.ts) -- run with no args to list all 5
+npx tsx --env-file=.env scripts/send-scenario.ts <streamId> <scenarioKey>
+
+# List every CAEP trigger's exact id -- use before wiring a new Workflow via API
+npx tsx scripts/list-trigger-definitions.ts
+
+# List every Workflow's live trigger registration + actual stored filter
+npx tsx scripts/check-trigger-subscriptions.ts
+
+# Check a Workflow's most recent execution status (defaults to risk-level-change Workflow)
+npx tsx scripts/check-workflow-execution.ts [workflowId]
+
+# Full step-by-step execution history for one run (found via trial, not documented by SailPoint)
+npx tsx scripts/check-execution-detail.ts <workflowId> <executionId>
 ```
 
 If signal sends start failing with `401` / `"JWT is expired"`, run

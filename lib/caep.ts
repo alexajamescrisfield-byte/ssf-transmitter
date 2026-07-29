@@ -30,7 +30,26 @@ export interface CaepEventInput {
   type: CaepEventType;
   subjectEmail: string;
   claims: Record<string, unknown>;
-  vendorContext?: Record<string, unknown>;
+  // Per "How to Build the SSF Transmitter.md"'s Event model section: these
+  // three claims exist so a single Workflow can branch on vendor/action
+  // instead of needing one hardcoded Workflow per vendor scenario.
+  // CONFIRMED 2026-07-28 against a real ISC tenant: ISC strips all three of
+  // these before a Workflow trigger ever sees them (OpenID SSF spec 4.2.3 --
+  // receivers MUST ignore claims they don't recognize). Kept for the SET's
+  // audit/history value and because a future receiver might not filter them,
+  // but do not design any Workflow logic around them arriving intact.
+  vendor?: string;
+  vendorEventType?: string;
+  recommendedAction?: string;
+  // Per the OpenID CAEP spec, `reason_admin`/`reason_user` are OFFICIAL
+  // optional claims on every CAEP event type (unlike the three above) --
+  // human-readable reason text. Because they're part of the recognized
+  // schema, not a custom field, these are the ones actually worth relying
+  // on to carry vendor/narrative context through to a Workflow (e.g. for a
+  // notification step) -- not yet confirmed empirically that ISC preserves
+  // them, but far more likely to than the fields above.
+  reasonAdmin?: string;
+  reasonUser?: string;
 }
 
 export class MissingCaepClaimsError extends Error {
@@ -64,7 +83,18 @@ export function buildCaepEvent(input: CaepEventInput) {
       },
       event_timestamp: Math.floor(Date.now() / 1000),
       ...input.claims,
-      ...(input.vendorContext ? { vendor_context: input.vendorContext } : {}),
+      ...(input.vendor ? { vendor: input.vendor } : {}),
+      ...(input.vendorEventType ? { vendor_event_type: input.vendorEventType } : {}),
+      ...(input.recommendedAction ? { recommended_action: input.recommendedAction } : {}),
+      // CONFIRMED 2026-07-28 against a real ISC tenant: reason_admin/
+      // reason_user are NOT plain strings -- the OpenID CAEP spec's own
+      // example shows them as localized objects (language code -> string),
+      // e.g. { "en": "..." }. Sending a bare string produced ISC's parser
+      // error "could not JSON decode claim" and the whole event was
+      // rejected before ever reaching a Workflow. CaepEventInput keeps
+      // these as plain strings for a simple caller API; wrap here.
+      ...(input.reasonAdmin ? { reason_admin: { en: input.reasonAdmin } } : {}),
+      ...(input.reasonUser ? { reason_user: { en: input.reasonUser } } : {}),
     },
   };
 }

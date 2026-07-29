@@ -19,7 +19,9 @@ async function main() {
       subjectEmail: "Jayme.Cannon@sailpointdemo.com",
       // Per the CAEP spec: "Value MUST be one of LOW, MEDIUM, HIGH."
       claims: { current_level: "HIGH", previous_level: "LOW" },
-      vendorContext: { vendor: "CrowdStrike", detection: "host_suspected_breach" },
+      vendor: "CrowdStrike",
+      vendorEventType: "host_suspected_breach",
+      recommendedAction: "disable_account",
     },
   });
 
