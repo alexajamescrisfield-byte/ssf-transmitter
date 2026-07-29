@@ -1025,6 +1025,83 @@ for real via `scripts/update-risk-level-change-email.ts`:
   `Send Email` step `ActivityTaskCompleted` → Workflow `Completed`, all
   within ~10 seconds.
 
+### 3.20 Supabase Auth login added -- the deployed app was completely public until now (2026-07-29)
+
+**Real gap closed, not a nice-to-have**: until this change, anyone with
+the production URL could open the Simulator and click Send -- no login of
+any kind existed, meaning a stranger could trigger a real PRISM/AD disable
+or certification campaign in `company21912-poc` with zero authentication.
+This matches the source doc's own stated plan (Section 6/Decisions:
+"Supabase Auth ... will be adopted ... timed to land ... alongside the
+start of Phase 2 Simulator UI work") -- not a new architectural decision,
+just finally implementing an already-agreed one now that the Simulator
+exists to protect.
+
+**What was built:**
+- `middleware.ts` + `lib/supabase/middleware.ts` -- runs on every request
+  matching the config's `matcher`, calls `supabase.auth.getUser()`
+  (validates against Supabase's server, not just trusting the cookie),
+  and either redirects (pages) or returns `401` JSON (`/api/*` paths) if
+  unauthenticated. **Deliberately excludes `/t/{slug}/...`** -- ISC's own
+  protocol endpoints (discovery, JWKS, streams, verify) authenticate via
+  `requireTenantByBearerToken()` (`lib/auth.ts`), not a login session;
+  gating those would break the actual transmitter. Confirmed by direct
+  request, not just code reading: `GET /t/company21912-poc/.well-known/
+  ssf-configuration` → `200` with real discovery JSON, unauthenticated,
+  both locally and in production.
+- `app/login/page.tsx` -- email+password form, calls
+  `supabase.auth.signInWithPassword()`. No self sign-up page exists or is
+  planned -- accounts are provisioned one at a time via
+  `scripts/add-user.ts`, matching the user's explicit choice.
+- `app/(portal)/layout.tsx` -- a route group wrapping the 3 existing pages
+  (Simulator/History/Credentials) in `PortalShell`, with its own
+  server-side `getUser()` check as defense-in-depth alongside middleware
+  (Supabase's own documented recommendation -- middleware alone can be
+  bypassed in some edge cases). `/login` sits outside this group so it
+  doesn't get the sidebar.
+- `components/PortalShell.tsx` updated to show the signed-in user's email
+  and a "Sign out" button (calls `supabase.auth.signOut()` client-side,
+  redirects to `/login`).
+- `scripts/add-user.ts` / `scripts/reset-user-password.ts` -- the only two
+  ways accounts get created or have their password changed. Both use the
+  `service_role` key, which **only ever exists locally** -- confirmed by
+  grepping every file under `app/`, `lib/`, and `components/` for any
+  reference to it; the only hit was a code comment. Never added to
+  Vercel's environment variables (unlike `NEXT_PUBLIC_SUPABASE_URL`/
+  `NEXT_PUBLIC_SUPABASE_ANON_KEY`, which the deployed app does need) --
+  deliberately, to keep the one highly-privileged key in as few places as
+  possible.
+
+**Verified end-to-end, twice** -- once locally, once again against the
+real production deployment after pushing:
+- Unauthenticated `GET /` → `307` to `/login` (both environments).
+- Unauthenticated `POST /api/simulate` → `401 {"error":"Unauthorized"}`
+  (both environments) -- not just page-level protection, the actual send
+  capability is gated too.
+- A real (throwaway, since-deleted) account signed in successfully, saw
+  the Simulator/History/Credentials pages, and "Sign out" correctly ended
+  the session and returned to `/login` -- confirmed both by the UI and by
+  re-checking that protected routes went back to redirecting/`401`ing
+  afterward.
+- `GET /t/company21912-poc/.well-known/ssf-configuration` → `200`, real
+  discovery JSON, unauthenticated, confirming the transmitter's actual
+  protocol surface is untouched by any of this.
+
+**One real mistake made and caught during setup, worth remembering**: the
+first account was accidentally created using a placeholder password
+copied verbatim from an example instead of a real chosen one -- since
+that placeholder text had appeared in a chat conversation, it was no
+longer private even though nothing was actually compromised (this is a
+local dev tool, not a public leak vector). Fixed immediately via
+`scripts/reset-user-password.ts` rather than treated as a non-issue --
+worth the same care as any other credential.
+
+**Known follow-up, not urgent**: `next dev` prints `The "middleware" file
+convention is deprecated. Please use "proxy" instead` on Next.js 16.2.11.
+Still fully functional today -- not fixed yet, but should be renamed
+(`middleware.ts` → `proxy.ts`, per Next.js's own migration path) before a
+future Next.js major version removes the old convention entirely.
+
 ---
 
 ## 4. Files Created or Modified
@@ -1102,6 +1179,12 @@ noted.
 | `scripts/update-device-compliance-workflow.ts` | One-time: widened the device-compliance-change trigger filter, added the PRISM+AD scope + `Check Compliance Status` choice step (Section 3.18) |
 | `scripts/update-device-compliance-description.ts` | One-time: updated that Workflow's own description text to match its new dual-direction behavior |
 | `scripts/update-risk-level-change-email.ts` | One-time: added the "Get Identity's Manager" step and a branded HTML risk-detail body to the risk-level-change Workflow's previously-empty `Send Email` step (Section 3.19) |
+| `middleware.ts` + `lib/supabase/middleware.ts` | Login gate for every page and `/api/*` route, explicitly excluding `/t/{slug}/...` (ISC's own protocol endpoints) -- Section 3.20 |
+| `lib/supabase/server.ts` / `lib/supabase/client.ts` | Server-side and browser-side Supabase clients (anon key only -- `service_role` never appears here) |
+| `app/login/page.tsx` | Email+password sign-in form. No self sign-up exists |
+| `app/(portal)/layout.tsx` | Wraps Simulator/History/Credentials in `PortalShell`, redirects to `/login` if unauthenticated (defense-in-depth alongside middleware) |
+| `scripts/add-user.ts` | The only way an account gets created -- run locally, uses `SUPABASE_SERVICE_ROLE_KEY`, never deployed |
+| `scripts/reset-user-password.ts` | Updates an existing account's password -- same local-only, service_role-key pattern as `add-user.ts` |
 | `scripts/check-audit-stream-ids.ts` | Read-only diagnostic used while root-causing the `NEXT_PUBLIC_APP_URL` bug — confirmed every send used the same stream ID, ruling out stream-selection as the cause |
 | `.claude/launch.json` | Dev-server launch config so the app can be previewed via the browser-automation tooling (`npm run dev` on port 3000) |
 
