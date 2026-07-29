@@ -77,6 +77,11 @@ model AuditLog {
   jti          String   @unique
   eventType    String
   subject      String
+  // Which catalog scenario (lib/catalog.ts key) this send came from, if any --
+  // lets the Simulator UI's History page show the actual vendor/event name
+  // instead of just the CAEP type. Null for sends not triggered from a
+  // catalog scenario (e.g. scripts/test-send.ts, verification SETs).
+  scenarioKey  String?
   httpStatus   Int?
   responseBody String?
   success      Boolean

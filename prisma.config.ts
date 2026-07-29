@@ -3,12 +3,25 @@
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
 
+// IMPORTANT: this `url` is used ONLY by the Prisma CLI (migrate/generate/
+// studio) -- Prisma 7 removed the old `directUrl` schema.prisma field
+// entirely; there is no connection string in schema.prisma anymore. The
+// running app never reads this config file at all: lib/prisma.ts builds
+// its own connection straight from DATABASE_URL via @prisma/adapter-pg.
+// That split is deliberate: DIRECT_URL should be Supabase's Session pooler
+// (port 5432, required for migrations), while DATABASE_URL stays on the
+// Transaction pooler (port 6543, required for normal app runtime) --
+// see docs/HANDOFF_RUNBOOK.md Section 3.4 for why the two pooler modes
+// can't be swapped. Name matches Prisma's own Supabase integration guide
+// convention (prisma.io/docs/orm/overview/databases/supabase), even though
+// nothing enforces this specific name -- it's just a plain env var read
+// here, not a schema-level contract.
 export default defineConfig({
   schema: "prisma/schema.prisma",
   migrations: {
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    url: process.env["DIRECT_URL"],
   },
 });

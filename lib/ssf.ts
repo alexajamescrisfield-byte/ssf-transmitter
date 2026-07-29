@@ -52,6 +52,9 @@ interface SendSsfSignalParams {
   tenantSlug: string;
   streamId: string;
   event: CaepEventInput;
+  // Which lib/catalog.ts scenario this came from, if any -- purely for the
+  // History page's display, not used to build the signal itself.
+  scenarioKey?: string;
 }
 
 // Build claims -> sign -> push SET. This is the ONLY path that may deliver
@@ -61,6 +64,7 @@ export async function sendSsfSignal({
   tenantSlug,
   streamId,
   event,
+  scenarioKey,
 }: SendSsfSignalParams) {
   const tenant = await prisma.tenant.findUnique({
     where: { slug: tenantSlug },
@@ -130,6 +134,7 @@ export async function sendSsfSignal({
       jti,
       eventType: event.type,
       subject: event.subjectEmail,
+      scenarioKey,
       httpStatus,
       responseBody,
       success,
