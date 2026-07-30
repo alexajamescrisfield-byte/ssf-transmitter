@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CAEP_EVENT_TYPES, CAEP_REQUIRED_CLAIMS, type CaepEventType } from "@/lib/caep";
+import {
+  CAEP_EVENT_TYPES,
+  CURRENT_LEVEL_VALUES,
+  CURRENT_STATUS_VALUES,
+  CREDENTIAL_TYPE_VALUES,
+  CHANGE_TYPE_VALUES,
+  type CaepEventType,
+} from "@/lib/caep";
 
 export interface CatalogRow {
   id: string;
@@ -38,12 +45,9 @@ const LABEL_STYLE: React.CSSProperties = {
   marginBottom: 6,
 };
 
-function placeholderClaims(caepType: CaepEventType): string {
-  const required = CAEP_REQUIRED_CLAIMS[caepType];
-  if (required.length === 0) return "{}";
-  const obj: Record<string, string> = {};
-  for (const key of required) obj[key] = "";
-  return JSON.stringify(obj, null, 2);
+interface TokenClaimRow {
+  key: string;
+  value: string;
 }
 
 export default function CatalogManager({ rows }: { rows: CatalogRow[] }) {
@@ -52,7 +56,19 @@ export default function CatalogManager({ rows }: { rows: CatalogRow[] }) {
   const [displayName, setDisplayName] = useState("");
   const [triggerCode, setTriggerCode] = useState("");
   const [caepType, setCaepType] = useState<CaepEventType>("risk-level-change");
-  const [claimsText, setClaimsText] = useState(placeholderClaims("risk-level-change"));
+
+  // One set of controlled fields per CAEP type -- every value the person can
+  // pick comes from a dropdown backed by lib/caep.ts's spec-confirmed enum
+  // lists, so a typo like the lowercase "high" that broke sends before
+  // (HANDOFF_RUNBOOK.md Section 3.5 item 11) can't happen here.
+  const [currentLevel, setCurrentLevel] = useState<string>(CURRENT_LEVEL_VALUES[2]);
+  const [previousLevel, setPreviousLevel] = useState<string>(CURRENT_LEVEL_VALUES[0]);
+  const [currentStatus, setCurrentStatus] = useState<string>(CURRENT_STATUS_VALUES[1]);
+  const [previousStatus, setPreviousStatus] = useState<string>(CURRENT_STATUS_VALUES[0]);
+  const [credentialType, setCredentialType] = useState<string>(CREDENTIAL_TYPE_VALUES[0]);
+  const [changeType, setChangeType] = useState<string>(CHANGE_TYPE_VALUES[1]);
+  const [tokenClaimRows, setTokenClaimRows] = useState<TokenClaimRow[]>([{ key: "", value: "" }]);
+
   const [vendorEventType, setVendorEventType] = useState("");
   const [recommendedAction, setRecommendedAction] = useState("");
   const [reasonAdmin, setReasonAdmin] = useState("");
@@ -65,21 +81,48 @@ export default function CatalogManager({ rows }: { rows: CatalogRow[] }) {
     setDisplayName("");
     setTriggerCode("");
     setCaepType("risk-level-change");
-    setClaimsText(placeholderClaims("risk-level-change"));
+    setCurrentLevel(CURRENT_LEVEL_VALUES[2]);
+    setPreviousLevel(CURRENT_LEVEL_VALUES[0]);
+    setCurrentStatus(CURRENT_STATUS_VALUES[1]);
+    setPreviousStatus(CURRENT_STATUS_VALUES[0]);
+    setCredentialType(CREDENTIAL_TYPE_VALUES[0]);
+    setChangeType(CHANGE_TYPE_VALUES[1]);
+    setTokenClaimRows([{ key: "", value: "" }]);
     setVendorEventType("");
     setRecommendedAction("");
     setReasonAdmin("");
+  }
+
+  function buildClaims(): Record<string, unknown> {
+    switch (caepType) {
+      case "risk-level-change":
+        return { current_level: currentLevel, previous_level: previousLevel };
+      case "device-compliance-change":
+        return { current_status: currentStatus, previous_status: previousStatus };
+      case "credential-change":
+        return { credential_type: credentialType, change_type: changeType };
+      case "session-revoked":
+        return {};
+      case "token-claims-change": {
+        const claims: Record<string, string> = {};
+        for (const row of tokenClaimRows) {
+          if (row.key.trim()) claims[row.key.trim()] = row.value;
+        }
+        // initiating_entity is NOT sent from here -- the server always
+        // forces it to "policy" (lib/vendorScenarios.ts), which is the only
+        // value that actually fires the live Workflow. No form field for it
+        // on purpose, so there's nothing to get wrong.
+        return { claims };
+      }
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
-    let claims: Record<string, unknown>;
-    try {
-      claims = JSON.parse(claimsText);
-    } catch {
-      setError("Claims must be valid JSON");
+    if (caepType === "token-claims-change" && Object.keys(buildClaims().claims as object).length === 0) {
+      setError("Add at least one claim (e.g. risk_score = high)");
       return;
     }
 
@@ -93,7 +136,7 @@ export default function CatalogManager({ rows }: { rows: CatalogRow[] }) {
           displayName,
           triggerCode,
           caepType,
-          claims,
+          claims: buildClaims(),
           vendorEventType: vendorEventType || undefined,
           recommendedAction: recommendedAction || undefined,
           reasonAdmin: reasonAdmin || undefined,
@@ -128,8 +171,6 @@ export default function CatalogManager({ rows }: { rows: CatalogRow[] }) {
       setDeletingId(null);
     }
   }
-
-  const requiredClaims = CAEP_REQUIRED_CLAIMS[caepType];
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1.1fr", gap: 24, alignItems: "start" }}>
@@ -244,11 +285,7 @@ export default function CatalogManager({ rows }: { rows: CatalogRow[] }) {
           <select
             style={{ ...INPUT_STYLE, background: "white" }}
             value={caepType}
-            onChange={(e) => {
-              const next = e.target.value as CaepEventType;
-              setCaepType(next);
-              setClaimsText(placeholderClaims(next));
-            }}
+            onChange={(e) => setCaepType(e.target.value as CaepEventType)}
           >
             {CAEP_EVENT_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -258,21 +295,173 @@ export default function CatalogManager({ rows }: { rows: CatalogRow[] }) {
           </select>
         </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <label style={LABEL_STYLE}>
-            Claims (JSON){" "}
-            {requiredClaims.length > 0 && (
-              <span style={{ fontWeight: 400, color: "oklch(0.55 0.01 70)" }}>
-                — required: {requiredClaims.join(", ")}
-              </span>
-            )}
-          </label>
-          <textarea
-            style={{ ...INPUT_STYLE, fontFamily: "'SF Mono', Consolas, monospace", fontSize: 12, minHeight: 90 }}
-            value={claimsText}
-            onChange={(e) => setClaimsText(e.target.value)}
-          />
-        </div>
+        {/* Claims: one set of dropdowns/fields per CAEP type, backed by
+            lib/caep.ts's closed enum lists -- nothing here is free-typed, so
+            a value ISC would reject can't be entered. */}
+        {caepType === "risk-level-change" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={LABEL_STYLE}>Previous level</label>
+              <select style={{ ...INPUT_STYLE, background: "white" }} value={previousLevel} onChange={(e) => setPreviousLevel(e.target.value)}>
+                {CURRENT_LEVEL_VALUES.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={LABEL_STYLE}>Current level</label>
+              <select style={{ ...INPUT_STYLE, background: "white" }} value={currentLevel} onChange={(e) => setCurrentLevel(e.target.value)}>
+                {CURRENT_LEVEL_VALUES.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {caepType === "device-compliance-change" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={LABEL_STYLE}>Previous status</label>
+              <select style={{ ...INPUT_STYLE, background: "white" }} value={previousStatus} onChange={(e) => setPreviousStatus(e.target.value)}>
+                {CURRENT_STATUS_VALUES.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={LABEL_STYLE}>Current status</label>
+              <select style={{ ...INPUT_STYLE, background: "white" }} value={currentStatus} onChange={(e) => setCurrentStatus(e.target.value)}>
+                {CURRENT_STATUS_VALUES.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {caepType === "credential-change" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={LABEL_STYLE}>Credential type</label>
+              <select style={{ ...INPUT_STYLE, background: "white" }} value={credentialType} onChange={(e) => setCredentialType(e.target.value)}>
+                {CREDENTIAL_TYPE_VALUES.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={LABEL_STYLE}>Change type</label>
+              <select style={{ ...INPUT_STYLE, background: "white" }} value={changeType} onChange={(e) => setChangeType(e.target.value)}>
+                {CHANGE_TYPE_VALUES.map((v) => (
+                  <option key={v} value={v}>
+                    {v}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+
+        {caepType === "session-revoked" && (
+          <div
+            style={{
+              marginBottom: 12,
+              fontSize: 12,
+              color: "oklch(0.55 0.01 70)",
+              background: "oklch(0.95 0.01 70)",
+              borderRadius: 6,
+              padding: "10px 12px",
+            }}
+          >
+            This event type has no required claims.
+          </div>
+        )}
+
+        {caepType === "token-claims-change" && (
+          <div style={{ marginBottom: 12 }}>
+            <label style={LABEL_STYLE}>Claims changed</label>
+            {tokenClaimRows.map((row, i) => (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8, marginBottom: 8 }}>
+                <input
+                  style={INPUT_STYLE}
+                  placeholder="claim name, e.g. risk_score"
+                  value={row.key}
+                  onChange={(e) => {
+                    const next = [...tokenClaimRows];
+                    next[i] = { ...next[i], key: e.target.value };
+                    setTokenClaimRows(next);
+                  }}
+                />
+                <input
+                  style={INPUT_STYLE}
+                  placeholder="new value, e.g. high"
+                  value={row.value}
+                  onChange={(e) => {
+                    const next = [...tokenClaimRows];
+                    next[i] = { ...next[i], value: e.target.value };
+                    setTokenClaimRows(next);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setTokenClaimRows(tokenClaimRows.filter((_, j) => j !== i))}
+                  disabled={tokenClaimRows.length === 1}
+                  style={{
+                    background: "none",
+                    border: "1px solid oklch(0.85 0.02 75)",
+                    borderRadius: 6,
+                    color: "oklch(0.55 0.01 70)",
+                    cursor: tokenClaimRows.length === 1 ? "not-allowed" : "pointer",
+                    padding: "0 10px",
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setTokenClaimRows([...tokenClaimRows, { key: "", value: "" }])}
+              style={{
+                background: "none",
+                border: "none",
+                color: "oklch(0.5 0.16 40)",
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: "pointer",
+                padding: 0,
+                marginBottom: 8,
+              }}
+            >
+              + Add another claim
+            </button>
+            <div
+              style={{
+                fontSize: 11.5,
+                color: "oklch(0.55 0.01 70)",
+                background: "oklch(0.95 0.01 70)",
+                borderRadius: 6,
+                padding: "10px 12px",
+                lineHeight: 1.5,
+              }}
+            >
+              This will always be sent with <code>initiating_entity: &quot;policy&quot;</code> — the one value
+              that actually fires the live Workflow (confirmed 2026-07-29). You don&apos;t need to set this
+              yourself.
+            </div>
+          </div>
+        )}
 
         <div style={{ marginBottom: 12 }}>
           <label style={LABEL_STYLE}>Reason (narrative text shown in emails/audit)</label>

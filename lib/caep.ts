@@ -26,6 +26,51 @@ export const CAEP_REQUIRED_CLAIMS: Record<CaepEventType, string[]> = {
   "token-claims-change": ["claims"],
 };
 
+// Closed enum lists for claim values ISC actually enforces. Single source of
+// truth for both the Admin catalog form (dropdowns, no free typing) and
+// server-side validation in lib/vendorScenarios.ts -- a typo like the
+// lowercase "high" that broke every risk-level-change send until caught
+// (HANDOFF_RUNBOOK.md Section 3.5 item 11) should be structurally
+// impossible to enter, not just documented.
+//
+// current_level/previous_level: not part of the base OpenID CAEP 1.0 spec
+// (that spec only defines "Assurance Level Change" with NIST-AAL levels) --
+// "risk-level-change" is ISC's own CAEP event, and LOW/MEDIUM/HIGH are the
+// only values ever empirically proven against this tenant. Deliberately not
+// widened with an unverified 4th value (e.g. "EXTREME") -- see this
+// project's standing rule of never inventing untested enum values.
+export const CURRENT_LEVEL_VALUES = ["LOW", "MEDIUM", "HIGH"] as const;
+
+// device-compliance-change: confirmed exhaustive per the OpenID CAEP 1.0
+// spec's Device Compliance Change event definition.
+export const CURRENT_STATUS_VALUES = ["compliant", "not-compliant"] as const;
+
+// credential-change: confirmed exhaustive per the OpenID CAEP 1.0 spec's
+// Credential Change event definition.
+export const CREDENTIAL_TYPE_VALUES = [
+  "password",
+  "pin",
+  "x509",
+  "fido2-platform",
+  "fido2-roaming",
+  "fido-u2f",
+  "verifiable-credential",
+  "phone-voice",
+  "phone-sms",
+  "app",
+] as const;
+export const CHANGE_TYPE_VALUES = ["create", "revoke", "update", "delete"] as const;
+
+// token-claims-change: the live "Create a Certification Campaign When Token
+// Claims Change" Workflow's trigger filter requires initiating_entity ==
+// "policy" (confirmed via GET /beta/trigger-subscriptions, not just the
+// spec example -- HANDOFF_RUNBOOK.md Section 3.12). This is the one value
+// that actually fires the proven Workflow; buildCaepEvent()/
+// createVendorScenario() always inject it for this type rather than
+// trusting a caller to remember it, since a scenario built without it
+// delivers and correlates fine but silently never fires anything.
+export const TOKEN_CLAIMS_INITIATING_ENTITY = "policy" as const;
+
 export interface CaepEventInput {
   type: CaepEventType;
   subjectEmail: string;

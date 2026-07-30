@@ -1,6 +1,14 @@
 import type { Prisma } from "@/app/generated/prisma/client";
 import { prisma } from "./prisma";
-import { CAEP_EVENT_TYPES, CAEP_REQUIRED_CLAIMS, type CaepEventType } from "./caep";
+import {
+  CAEP_EVENT_TYPES,
+  CURRENT_LEVEL_VALUES,
+  CURRENT_STATUS_VALUES,
+  CREDENTIAL_TYPE_VALUES,
+  CHANGE_TYPE_VALUES,
+  TOKEN_CLAIMS_INITIATING_ENTITY,
+  type CaepEventType,
+} from "./caep";
 import type { CaepEventInput } from "./caep";
 
 // DB-backed replacement for the old static lib/catalog.ts map -- see
@@ -64,6 +72,53 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, "");
 }
 
+function assertEnumValue(value: unknown, allowed: readonly string[], field: string): string {
+  if (typeof value !== "string" || !allowed.includes(value)) {
+    throw new InvalidScenarioInputError(
+      `${field} must be one of: ${allowed.join(", ")} (got ${JSON.stringify(value)})`,
+    );
+  }
+  return value;
+}
+
+// Rebuilds `claims` from validated pieces rather than trusting the caller's
+// object shape -- enforced here, not just in the Admin form's UI, so an
+// enum typo or a missing initiating_entity is impossible to persist
+// regardless of how the request was made (form, or a direct API call).
+function normalizeClaims(caepType: CaepEventType, claims: Record<string, unknown>): Record<string, unknown> {
+  switch (caepType) {
+    case "risk-level-change":
+      return {
+        current_level: assertEnumValue(claims.current_level, CURRENT_LEVEL_VALUES, "current_level"),
+        previous_level: assertEnumValue(claims.previous_level, CURRENT_LEVEL_VALUES, "previous_level"),
+      };
+    case "device-compliance-change":
+      return {
+        current_status: assertEnumValue(claims.current_status, CURRENT_STATUS_VALUES, "current_status"),
+        previous_status: assertEnumValue(claims.previous_status, CURRENT_STATUS_VALUES, "previous_status"),
+      };
+    case "credential-change":
+      return {
+        credential_type: assertEnumValue(claims.credential_type, CREDENTIAL_TYPE_VALUES, "credential_type"),
+        change_type: assertEnumValue(claims.change_type, CHANGE_TYPE_VALUES, "change_type"),
+      };
+    case "session-revoked":
+      return {};
+    case "token-claims-change": {
+      const inner = claims.claims;
+      if (typeof inner !== "object" || inner === null || Object.keys(inner).length === 0) {
+        throw new InvalidScenarioInputError(
+          "token-claims-change requires at least one claim under \"claims\" (e.g. { risk_score: \"high\" })",
+        );
+      }
+      // initiating_entity is always forced to "policy" here -- it's the one
+      // value that actually fires the live Workflow (see lib/caep.ts), so a
+      // caller-supplied value is never trusted, only ever overwritten.
+      return { claims: inner, initiating_entity: TOKEN_CLAIMS_INITIATING_ENTITY };
+    }
+  }
+}
+
 export interface CreateVendorScenarioInput {
   vendor: string;
   displayName: string;
@@ -76,9 +131,12 @@ export interface CreateVendorScenarioInput {
   reasonUser?: string;
 }
 
-// Validates and inserts a new catalog entry. Mirrors buildCaepEvent()'s
-// required-claim check (lib/caep.ts) so a scenario can never be saved in a
-// shape that would fail to fire a Workflow when actually sent.
+// Validates and inserts a new catalog entry. normalizeClaims() rebuilds the
+// claims object from validated, enum-checked pieces (lib/caep.ts's closed
+// value lists) rather than trusting whatever shape was submitted -- a
+// scenario can never be saved with a claim value ISC would reject, or
+// (for token-claims-change) missing the initiating_entity that actually
+// fires the live Workflow.
 export async function createVendorScenario(input: CreateVendorScenarioInput) {
   const { vendor, displayName, triggerCode, caepType, claims } = input;
 
@@ -88,13 +146,7 @@ export async function createVendorScenario(input: CreateVendorScenarioInput) {
   if (!CAEP_EVENT_TYPES.includes(caepType as CaepEventType)) {
     throw new InvalidScenarioInputError(`Unsupported CAEP type: ${caepType}`);
   }
-  const required = CAEP_REQUIRED_CLAIMS[caepType as CaepEventType];
-  const missing = required.filter((k) => !(k in claims));
-  if (missing.length > 0) {
-    throw new InvalidScenarioInputError(
-      `${caepType} requires claim(s): ${missing.join(", ")}`,
-    );
-  }
+  const normalizedClaims = normalizeClaims(caepType as CaepEventType, claims);
 
   const baseKey = slugify(`${vendor}-${displayName}`);
   let key = baseKey;
@@ -110,7 +162,7 @@ export async function createVendorScenario(input: CreateVendorScenarioInput) {
       displayName: displayName.trim(),
       triggerCode: triggerCode.trim(),
       caepType,
-      claims: claims as Prisma.InputJsonValue,
+      claims: normalizedClaims as Prisma.InputJsonValue,
       vendorEventType: input.vendorEventType?.trim() || null,
       recommendedAction: input.recommendedAction?.trim() || null,
       reasonAdmin: input.reasonAdmin?.trim() || null,
