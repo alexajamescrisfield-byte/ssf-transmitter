@@ -32,15 +32,15 @@ model Tenant {
 // privateKeySecretId references a row in Supabase Vault's vault.secrets
 // table (accessed via lib/vault.ts, not a Prisma-managed model since Vault
 // isn't part of this schema) -- the actual PEM never lives in a plain
-// column. privateKeyPem is kept temporarily, nullable, as a rollback safety
-// net during the migration; it is dropped in a follow-up migration once a
-// real signed send is verified working end-to-end against Vault.
+// column. The old privateKeyPem column was dropped once a real signed send
+// was verified working end-to-end against Vault (see
+// scripts/validate_key_migration.sh) -- a manual pre-drop export of the one
+// legacy key it held is kept outside the repo as a rollback safety net.
 model SigningKey {
   id                  String   @id @default(cuid())
   tenantId            String   @unique
   tenant              Tenant   @relation(fields: [tenantId], references: [id])
   kid                 String   @unique
-  privateKeyPem       String?
   privateKeySecretId  String?
   publicKeyJwk        String // JSON-stringified JWK, served at /.well-known/jwks.json
   createdAt           DateTime @default(now())
