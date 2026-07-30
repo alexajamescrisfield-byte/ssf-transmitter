@@ -1,9 +1,14 @@
 # Threat Signal Transmitter (TST) — Handoff Runbook
 
 **Date of this handoff:** 2026-07-27 (last substantively updated
-2026-07-29 — see Section 3.18 for the Simulator UI build, the first real
-SE-facing surface this project has ever had, plus the device-compliance-change
-Workflow's new PRISM+AD scope and reverse-direction re-enable branch)
+2026-07-30 — see Sections 3.21-3.25 for this session: the Admin Overview
+dashboard + DB-backed vendor catalog (closing the last "minimum viable SE
+surface" gap), a typo-proofing pass on the Add-vendor form plus a real fix
+for `token-claims-change` scenarios, branded HTML emails on all 3
+certification-campaign Workflows, signing keys fully migrated to Supabase
+Vault (plaintext column dropped, live-verified), and multi-tenant support
+(Tenant Configuration Panel, a tenant switcher, and a cross-tenant Overview
+tile) — all deployed to production and merged to `main`.)
 **Repo:** https://github.com/alexajamescrisfield-byte/ssf-transmitter (Public)
 **Live deployment:** https://ssf-transmitter-chi.vercel.app
 **ISC tenant used for testing:** `company21912-poc` (admin console: https://company21912-poc.identitynow-demo.com/)
@@ -77,6 +82,19 @@ it is now closed. The paragraph below describes the state as of earlier in
 the day, before this UI existed; kept for historical accuracy of how the
 day progressed, not because it's still true.
 
+**UPDATE 2026-07-30: multi-tenant support now exists, and the "minimum
+viable SE surface" is fully complete.** See Sections 3.21-3.25. The portal
+is no longer wired to exactly one hardcoded ISC tenant — an Admin >
+Tenants panel lets an operator provision additional tenants through the
+UI (no more CLI-only provisioning), and a switcher lets Simulator/
+History/Credentials operate on whichever tenant is selected. The Admin
+catalog piece (the one item still open as of Section 7 item 6) is also
+now done: vendor/event scenarios live in Postgres and can be added
+through the UI without a code change or redeploy. Signing keys are fully
+migrated to Supabase Vault with the old plaintext column dropped
+(Section 3.24) — the project's last remaining "not production-grade yet"
+flag on Definition-of-Done criterion 1 (Section 2.1) is resolved.
+
 **No SE-facing UI exists yet [as of early 2026-07-29].** All testing so far
 has been done via command-line scripts run by the developer, not by an SE
 clicking buttons. That's Phase 2 work, not started.
@@ -84,13 +102,14 @@ clicking buttons. That's Phase 2 work, not started.
 ### 2.1 "Definition of Done" — status against `How to Build the SSF Transmitter.md`
 
 That source document defines exactly what "done" means for this project.
-Checking each criterion honestly, **this project is not yet complete**:
+**UPDATE 2026-07-30: 4 of 5 criteria are now fully done; the 5th is
+permanently, externally blocked (not something further work will fix).**
 
 | Definition-of-done criterion | Status |
 |---|---|
-| Provision a tenant in the portal | **Partial** — a tenant can be provisioned, but only via a CLI script (`scripts/provision-tenant.ts`), not "in the portal," because no portal exists yet |
+| Provision a tenant in the portal | **DONE (2026-07-30)** — Admin > Tenants panel (Section 3.25) provisions a tenant through the UI, no CLI required. The CLI script (`scripts/provision-tenant.ts`) still exists and still works, kept for scripting convenience, but is no longer the only path |
 | Wire SailPoint ISC via Discovery URL + API token | **Done** |
-| Pass Verify Connection | **NOT done** — this is the unresolved `/ssf/verify` issue (Section 7, item 1). The source doc lists this as the literal #1 item in its "Suggested backlog (ordered)" |
+| Pass Verify Connection | **Permanently blocked, not "not done"** — this is the unresolved `/ssf/verify` issue (Section 7, item 1). Confirmed with the user (2026-07-29): no SailPoint support case will be filed for this; don't resurface it as a next step. Real signal delivery (proven repeatedly, every session) is stronger evidence of a working transmitter than this synthetic handshake would be anyway (Section 2.2) |
 | Send at least 3 CAEP types from realistic vendor stories | **DONE (2026-07-29)** — see detail below the table |
 | Show a Workflow remediation in ISC | **Done** — PRISM account disable, confirmed live (2 CAEP types); certification campaign remediation confirmed live for the 3rd (see below) |
 
@@ -101,7 +120,7 @@ Checking each criterion honestly, **this project is not yet complete**:
 
 **(2026-07-29) Updated bottom line**: all 3 CAEP types now have the **full** chain proven — signal → correlate → trigger → real remediation executed — with zero remaining gaps attributable to an ISC platform bug. What looked like a platform bug on 2026-07-28 turned out to be a fixable Workflow misconfiguration; see Section 3.14 for the full story. This closes criterion 4 outright, not provisionally.
 
-**Bottom line, updated 2026-07-29:** 3 of 5 definition-of-done criteria are fully met outright (Wire ISC, Send ≥3 CAEP types, Show a Workflow remediation), 1 is partial (portal), 1 is externally blocked and tracked separately (Verify Connection — see Section 5's 2026-07-29 note on the decision not to file a SailPoint support case for it). Do not treat this project as complete based on Section 2's "Phase 0 gate: PROVEN" framing alone — that refers to the *protocol* working, which is necessary but not sufficient for the actual definition of done in the source document. See Sections 7 and 9 for exactly what's left.
+**Bottom line, updated 2026-07-30:** 4 of 5 definition-of-done criteria are now fully met outright (Provision a tenant in the portal, Wire ISC, Send ≥3 CAEP types, Show a Workflow remediation). The 5th (Verify Connection) is permanently, externally blocked — not partial, not pending further work, tracked separately and not expected to ever close (Section 5's 2026-07-29 note on the decision not to file a SailPoint support case for it). Do not treat this project as complete based on Section 2's "Phase 0 gate: PROVEN" framing alone — that refers to the *protocol* working, which is necessary but not sufficient for the actual definition of done in the source document. See Sections 7 and 9 for exactly what's left.
 
 **(2026-07-28) Clarification, decided explicitly with the user:** the "NOT done"/partial rows do **not** mean Phase 0 or Phase 1 are incomplete — see Section 2.2. They mean the project-level Definition of Done is a separate, still-open finish line. Verify Connection is tracked as an external, non-blocking issue (support case) — and the token-claims-change campaign-generation bug is now tracked the same way (Section 7). Do not reinterpret or lower this bar — the criteria as the source document states them are unchanged; only our prioritization of *when*/*how* to finish them changed.
 
@@ -1102,6 +1121,256 @@ Still fully functional today -- not fixed yet, but should be renamed
 (`middleware.ts` → `proxy.ts`, per Next.js's own migration path) before a
 future Next.js major version removes the old convention entirely.
 
+### 3.21 Admin Overview dashboard + vendor catalog moved to Postgres (2026-07-30)
+
+**The single remaining "minimum viable SE surface" gap (Section 7 item 6's
+Admin catalog piece) is closed.** Prompted by the user sharing a screenshot
+of a reference multi-tenant portal's Admin > Overview screen and asking for
+the same for this project, plus a way to add vendor/event scenarios without
+editing code.
+
+**Overview page** (`app/(portal)/admin/page.tsx`): 4 metric tiles (Tenant/
+Signals Sent/Last 24 Hours/Last 7-30 Days), a "Most-used vendor events"
+table, a "Recent failures" table (last 10) -- all real Prisma aggregate
+queries against `AuditLog`, no mock data. **Deliberately adapted, not
+copied, from the reference screenshot**: that portal's "Tenants: 4 active"
+tile was dropped at first (this project was single-tenant at the time) and
+replaced with a tenant-name/stream-status tile -- then reinstated for real
+once Section 3.25's multi-tenant work gave it something real to count.
+
+**Vendor catalog moved from a static `lib/catalog.ts` file into a new
+`VendorScenario` Postgres table** (`prisma/schema.prisma`), because the
+old file could only be edited by changing code and redeploying -- exactly
+the gap Section 7 item 6 named. `lib/vendorScenarios.ts` is the new DB
+access layer (`listVendorScenarios()`/`getVendorScenario()`/
+`createVendorScenario()`/`deleteVendorScenario()`); `scripts/seed-vendor-
+scenarios.ts` was a one-time migration of the original 15 scenarios into
+the table (preserving their exact keys, since `AuditLog.scenarioKey`
+already referenced them). Every runtime consumer (Simulator, History,
+`/api/simulate`, `scripts/send-scenario.ts`) was switched over; the
+Simulator page was split into a server component (`app/(portal)/page.tsx`,
+fetches scenarios) wrapping a new client component
+(`components/SimulatorClient.tsx`, the interactive form, unchanged
+behavior). `lib/catalog.ts` itself was kept, used only by the one-time seed
+script for historical reference.
+
+**Admin > Catalog page** (`app/(portal)/admin/catalog/page.tsx` +
+`components/CatalogManager.tsx`): lists every scenario, and an "Add vendor
+event" form that writes directly to the new table -- **verified live**: a
+test Zscaler scenario added through the form appeared in the Simulator's
+vendor grid immediately, no redeploy, then was deleted (both catalog
+scope changes in this section were test-and-revert, catalog is back to
+the original 15/5-vendor state committed in Section 3.17).
+
+All 28 existing integration tests updated to read from the DB instead of
+importing the static map (`tests/integration/catalog.test.ts`) -- still
+passing, now also covering whatever an admin adds through the UI, not
+just the original static set.
+
+### 3.22 Typo-proofing the Add-vendor form + a real fix for `token-claims-change` (2026-07-30)
+
+Two real gaps found by the user actually trying to use the new Admin
+catalog form (Section 3.21), both fixed the same session:
+
+**Gap 1 -- claim values were free-typed JSON, no validation against what
+ISC actually accepts.** The exact mistake that broke real sends before
+(`current_level: "high"` lowercase, Section 3.5 item 11) was reachable
+again through the new UI with zero guardrails. **Fixed**: replaced the raw
+JSON textarea with per-CAEP-type dropdowns/fields backed by closed enum
+lists in `lib/caep.ts` (`CURRENT_LEVEL_VALUES`, `CURRENT_STATUS_VALUES`,
+`CREDENTIAL_TYPE_VALUES`, `CHANGE_TYPE_VALUES` -- the credential-change
+enums fetched directly from the OpenID CAEP 1.0 spec via WebFetch, not
+guessed; the risk-level-change enum kept to the 3 values already
+empirically proven against this tenant, since "risk-level-change" itself
+isn't in the base OpenID CAEP spec -- it's ISC's own event, and inventing
+a 4th untested value would repeat the exact mistake being fixed).
+Enforced **server-side too**, not just in the form
+(`lib/vendorScenarios.ts`'s `normalizeClaims()`), so a direct API call
+can't bypass it either.
+
+**Gap 2 -- `token-claims-change` scenarios silently never fired.** The
+live "Create a Certification Campaign When Token Claims Change" Workflow's
+trigger filter requires `initiating_entity == "policy"` nested inside the
+claims (confirmed via `scripts/test-execute-workflow.ts` and Section
+3.12's original investigation) -- a real, previously-proven requirement
+that only ever existed as tribal knowledge inside one now-deleted catalog
+entry (Section 3.17 dropped the only `token-claims-change` scenario from
+the catalog). The new Admin form had no way to know about it, so a
+scenario built through the UI would deliver and correlate fine but never
+fire anything -- a real regression the user caught by asking direct
+questions rather than accepting "it should work." **Fixed**: the claims
+editor for this type now builds the nested `{ claims: {...} }` shape from
+a simple key/value row editor, and the server **always** force-injects
+`initiating_entity: "policy"` (`lib/vendorScenarios.ts`), ignoring
+whatever a caller sends -- can't be created wrong, via the form or the
+API.
+
+**Verified live, twice.** First: added a real Zscaler `token-claims-
+change` test scenario through the form, sent it for real, confirmed the
+Workflow fired -- real `ACTIVE` certification campaign created
+(`"Emergency Access Review"`), correctly scoped to one identity, real
+email delivered to the manager, all within ~34 seconds. Second (explicit
+user request, "we need to make sure it works"): re-verified the exact
+same chain a second time after the code was finalized. Test scenario
+removed afterward each time, catalog back to its committed 15/5-vendor
+state.
+
+### 3.23 Branded HTML emails on all 3 certification-campaign Workflows (2026-07-30)
+
+Following on from the risk-level-change email (Section 3.19), the user
+asked whether the same treatment could apply to the other 3 Workflows
+that create a certification campaign (`credential-change`,
+`session-revoked`, `token-claims-change`) -- all 3 previously had either
+plain unstyled HTML or, for `token-claims-change`, messy Word-pasted
+markup with garbage class names, never intentionally designed.
+
+Built via `scripts/update-certification-campaign-emails.ts` (disable →
+patch full `/definition` → re-enable, the same safe pattern used for
+every structural Workflow edit in this project). **Deliberately styled
+distinctly from the risk-level-change email** (amber/gold banner instead
+of maroon), per explicit user direction, so a "certification review"
+notice reads differently from an "access disabled" alert at a glance --
+same table-based, all-inline-styles email-client-safe construction
+otherwise. Also adds a "Details" field using `reason_admin` (the one CAEP
+claim ISC actually preserves, per Section 7 item 5's finding) -- these 3
+emails never showed any vendor narrative context before.
+
+**Verified live, all 3 simultaneously**: real signals sent for
+`credential-change` (Okta/Credential Reset), `session-revoked` (Okta/
+Session Revoked), and `token-claims-change` (a temporary Zscaler test
+scenario) -- all 3 `Send Email` steps completed with zero errors, all
+context variables resolved with real data (manager "Martena", identity
+"Jayme.Cannon", correct campaign names, correct `reason_admin` narrative
+per type e.g. `"Okta: Credential Reset"`).
+
+### 3.24 Signing keys migrated to Supabase Vault, plaintext column dropped (2026-07-30)
+
+**Closes the last item on Section 6/8's standing risk list**: signing
+keys were plaintext PEM in a Postgres column since Phase 0, explicitly
+flagged in the schema comment as needing to move to a real vault before
+this was more than a proof-of-concept.
+
+**Confirmed first, not assumed**: the `supabase_vault` Postgres extension
+is enabled on this project (`select extname from pg_extension where
+extname = 'supabase_vault'`), and the DB role behind `DATABASE_URL`/
+`DIRECT_URL` (Supabase's pooler-mapped `postgres` role) has grants on
+both `vault.create_secret()` and the `vault.decrypted_secrets` view --
+verified with a real create/read/delete round trip before writing any
+production code.
+
+**Migration done in explicit, separately-verified stages** (matching this
+project's "checkpoint before risky change" pattern, Section 3.15):
+1. Added `SigningKey.privateKeySecretId` (nullable, additive migration) --
+   `privateKeyPem` kept, made nullable, as a rollback safety net.
+2. New `lib/vault.ts` (`storeSecret()`/`readSecret()`, parameterized
+   `$queryRaw` against Vault) -- sanity-tested standalone before wiring in.
+3. The one real production key backfilled via a one-time script,
+   **verified byte-for-byte identical** to the original PEM after the
+   round trip.
+4. `lib/keys.ts` (`getOrCreateSigningKey()`) switched to write **only**
+   to Vault for any new key -- confirmed live via the Tenant Configuration
+   Panel (Section 3.25): every tenant created after this point has
+   `privateKeyPem: null` from creation, no plaintext ever touches the DB
+   for them.
+5. Both `lib/ssf.ts` call sites (`sendSsfSignal()`/`sendVerificationSet()`)
+   switched to fetch the PEM fresh from Vault per-signature instead of
+   reading the column. **Verified with a real live send** immediately
+   after: risk-level-change → correlated → PRISM disabled, confirmed via
+   the Workflow's own execution trace, signed entirely with a
+   Vault-fetched key.
+6. **A formal pre-drop validation gate was run before touching the
+   column** (`scripts/validate_key_migration.sh`, written for and kept as
+   a reusable artifact): Vault retrieval + fingerprint match against the
+   published JWKS (✅), a pure sign/verify roundtrip using only a
+   Vault-fetched key with grep-confirmed no DB-fallback code path
+   remaining (✅), DB column pre-drop sanity (✅), no plaintext key found
+   anywhere in tracked source/git history/`.env`/session logs (✅).
+   Backup coverage (Gate 5) could not be independently verified (no
+   Supabase dashboard access from this tool, and this project is on
+   Supabase's free tier, which doesn't include automated backups by
+   default) -- reported as an explicit unresolved gate, not silently
+   passed. A manual local export of the one legacy key was made as a
+   mitigation before proceeding.
+7. **The actual column drop was sequenced deliberately to avoid ever
+   having deployed code and DB schema disagree**: schema change + new
+   Prisma Client committed and **pushed to production first** (confirmed
+   healthy before touching the database), *then* `npm run migrate` ran
+   the actual `ALTER TABLE ... DROP COLUMN` against the shared database.
+   Doing it in the reverse order (drop first, deploy second) would have
+   broken every signal send in the window between the two -- this was
+   identified and explained before executing, not discovered by breaking
+   something.
+8. **Verified post-drop, live**: column confirmed gone via
+   `information_schema.columns`, all 28 tests still pass, production
+   health-checked, and a real signal sent afterward correlated and fired
+   the Workflow (PRISM disabled then re-enabled).
+
+The one-time backfill script (`scripts/migrate-signing-key-to-vault.ts`)
+was deleted once its job was done and the column it referenced no longer
+exists.
+
+### 3.25 Multi-tenant support: Tenant panel, switcher, cross-tenant Overview (2026-07-30)
+
+Prompted by a direct question: "if this tool is meant to allow many SEs to
+use it, what changes need to be made?" **Scoped deliberately narrower than
+a full multi-tenant SaaS pivot** -- no per-user tenant isolation, no
+change to the "each operator manages their own set of ISC tenants from one
+deployed instance" model. What changed: a single deployed instance can now
+track and switch between *multiple* ISC tenants instead of exactly one.
+
+**Correction of an early misunderstanding, worth keeping**: the connection
+direction is ISC → transmitter, not the reverse (receiver-initiated, per
+Section 1's original architecture finding) -- so this feature does **not**
+mean an SE enters their ISC org's credentials into this app. It's the
+opposite: the app generates a Discovery URL + API token *for* a new
+tenant, and the SE pastes *those* into ISC's own admin console, same
+one-time manual link this project has always required. There is no
+SE-supplied ISC secret to store, so the credential-boundary concern
+initially raised for this feature didn't end up applying.
+
+**Piece 1 -- Tenant Configuration Panel** (`app/(portal)/admin/tenants/
+page.tsx` + `components/TenantManager.tsx` + `lib/tenants.ts` +
+`app/api/admin/tenants/route.ts`): lists existing tenants (slug, name,
+stream status, created date) and a create form -- a GUI wrapper around
+exactly what `scripts/provision-tenant.ts` already did, reusing the same
+`getOrCreateSigningKey()` call (so new tenants go straight through the
+Vault-only path from Section 3.24). Verified live: created a real test
+tenant, confirmed `privateKeyPem: null`/`privateKeySecretId` set and
+readable back out of Vault.
+
+**Piece 3 -- Overview cross-tenant aggregation** (`app/(portal)/admin/
+page.tsx`, rewritten): dropped the single-tenant `where: {tenantId}`
+filter from every Overview query, added a real "Tenants" tile
+(`N active, M not linked`, via `lib/tenants.ts`'s `listTenantsWithStatus()`),
+added a Tenant column to the Recent Failures table. Read-only page, zero
+risk to the signing/sending pipeline.
+
+**Piece 2 -- tenant switcher** (the one piece touching the live
+signal-sending path, built last and verified most carefully):
+`TENANT_SLUG` (a hardcoded constant) replaced by
+`getSelectedTenantSlug()` (`lib/tenant.ts`) -- a cookie-based resolver
+that falls back to the first tenant ever created when nothing is
+selected, so a single-tenant deployment behaves identically to before
+with zero visible change. New `POST /api/tenant-selection` route sets the
+cookie (gated by the same auth middleware as every other `/api/*` route).
+`PortalShell.tsx` now renders a real `<select>` switcher instead of static
+text. **Verified live, end-to-end**: created a second tenant, switched to
+it, confirmed the Credentials page showed *that* tenant's own real
+Discovery URL (not the original); switched back and sent a real signal
+through the actual Simulator UI -- correlated, fired the Workflow, PRISM
+disabled then re-enabled, confirmed via the execution trace.
+
+**Safety process, done at the user's explicit request ("make sure we can
+revert back and not break anything")**: all 3 pieces built on a fresh
+`dev` branch (the project's pre-existing `dev` branch had gone stale --
+10 commits behind `main`, predating this entire session -- deleted and
+recut from the current `main` tip rather than reused). Each piece
+committed and fully verified (tests + a live send where relevant) before
+the next started. Merged to `main` via a single clean, conflict-free
+`git merge` only after the user reviewed the live preview themselves;
+local `dev` deleted after the merge (fully merged, nothing lost, trivial
+to recreate for future work).
+
 ---
 
 ## 4. Files Created or Modified
@@ -1187,6 +1456,26 @@ noted.
 | `scripts/reset-user-password.ts` | Updates an existing account's password -- same local-only, service_role-key pattern as `add-user.ts` |
 | `scripts/check-audit-stream-ids.ts` | Read-only diagnostic used while root-causing the `NEXT_PUBLIC_APP_URL` bug — confirmed every send used the same stream ID, ruling out stream-selection as the cause |
 | `.claude/launch.json` | Dev-server launch config so the app can be previewed via the browser-automation tooling (`npm run dev` on port 3000) |
+| `prisma/schema.prisma`'s `VendorScenario` model | Vendor/event catalog moved from a static file into Postgres, so Admin > Catalog can add entries without a redeploy (Section 3.21) |
+| `lib/vendorScenarios.ts` | DB access layer for the catalog: `listVendorScenarios()`/`getVendorScenario()`/`createVendorScenario()` (validates + normalizes claims per CAEP type, force-injects `initiating_entity` for token-claims-change)/`deleteVendorScenario()` |
+| `scripts/seed-vendor-scenarios.ts` | One-time: migrated the original 15 static `lib/catalog.ts` scenarios into the new table, preserving their exact keys |
+| `components/SimulatorClient.tsx` | The Simulator's interactive form, split out of `app/(portal)/page.tsx` (now a server component that fetches scenarios from the DB and passes them down) |
+| `app/(portal)/admin/page.tsx` | Overview dashboard — 4 metric tiles, most-used vendor events, recent failures (last 10). Rewritten in Section 3.25 to aggregate across all tenants instead of one |
+| `components/AdminNav.tsx` | Shared sub-nav for the Admin section (Overview / Catalog / Tenants tabs) |
+| `app/(portal)/admin/catalog/page.tsx` + `components/CatalogManager.tsx` | Admin catalog page: lists scenarios, add-vendor form with per-CAEP-type dropdowns (no free-typed claim values), delete |
+| `app/api/admin/scenarios/route.ts` + `app/api/admin/scenarios/[id]/route.ts` | Create/delete API routes backing the Catalog admin page |
+| `lib/caep.ts`'s enum constants | `CURRENT_LEVEL_VALUES`/`CURRENT_STATUS_VALUES`/`CREDENTIAL_TYPE_VALUES`/`CHANGE_TYPE_VALUES`/`TOKEN_CLAIMS_INITIATING_ENTITY` — closed, spec-confirmed value lists shared by the Catalog form and server-side validation (Section 3.22) |
+| `scripts/update-certification-campaign-emails.ts` | One-time: added the branded amber/gold HTML email to the credential-change, session-revoked, and token-claims-change Workflows (Section 3.23) |
+| `lib/vault.ts` | Thin wrapper around Supabase Vault (`vault.create_secret`/`vault.decrypted_secrets` via parameterized `$queryRaw`) — used for signing-key private material only (Section 3.24) |
+| `prisma/migrations/20260730144544_signing_key_vault_secret_id/` | Adds nullable `SigningKey.privateKeySecretId` |
+| `prisma/migrations/20260730191005_drop_signing_key_plaintext_pem/` | Drops the now-unused `SigningKey.privateKeyPem` column, applied only after the corresponding code was live in production (Section 3.24) |
+| `scripts/validate_key_migration.sh` | Reusable pre-drop validation gate script — kept as a historical record and a template for any future "moving a secret out of a plain column" migration |
+| `lib/tenants.ts` | DB access layer for tenant CRUD: `listTenantsWithStatus()`, `createTenant()` (GUI wrapper around the same logic `scripts/provision-tenant.ts` already used) (Section 3.25) |
+| `app/(portal)/admin/tenants/page.tsx` + `components/TenantManager.tsx` | Admin > Tenants panel — list + create form, shows the new tenant's Discovery URL/API token to paste into ISC |
+| `app/api/admin/tenants/route.ts` | Create-tenant API route |
+| `lib/tenant.ts`'s `getSelectedTenantSlug()` | Replaces the old hardcoded `TENANT_SLUG` constant — cookie-based, falls back to the first tenant created if nothing is selected |
+| `app/api/tenant-selection/route.ts` | Sets the tenant-selection cookie, gated by the same auth middleware as every other `/api/*` route |
+| `components/PortalShell.tsx` | Sidebar — now renders a real tenant switcher `<select>` instead of static text (Section 3.25) |
 
 ---
 
@@ -1323,6 +1612,48 @@ noted.
   embedded secrets as a first resort when a native action is misbehaving
   — check the action's own schema for alternate configuration branches
   first (see Section 3.14's "why this matters" note).
+- **(2026-07-30) Vendor catalog moved from a static file to Postgres,
+  deliberately kept tenant-agnostic/global.** A vendor scenario (e.g.
+  "CrowdStrike: Host Isolated") means the same thing regardless of which
+  ISC tenant it's sent against, so unlike `Tenant`/`Stream`/`AuditLog`,
+  `VendorScenario` has no `tenantId` — one shared catalog across every
+  tenant. This was a deliberate design choice made while scoping the
+  multi-tenant work (Section 3.25), not an oversight; revisit only if a
+  real need for per-tenant catalogs ever emerges.
+- **(2026-07-30) Multi-tenant support scoped narrower than a full SaaS
+  pivot, on purpose.** The alternative — one shared hosted instance many
+  SEs log into, each seeing only their own tenant — was explicitly
+  considered and not built. What shipped instead: one deployed instance
+  can track and switch between multiple ISC tenants, but there is still
+  no per-user access control tying a logged-in account to a specific
+  subset of tenants. Any authenticated user of a given deployment can see
+  and operate on every tenant registered to it. This matches the
+  project's original "each SE/team deploys their own instance" model
+  (Section 5, earlier decision) — it does not reverse it, it extends what
+  one instance can do. **If per-user tenant isolation is ever needed,
+  that's the real SaaS pivot this session deliberately avoided** — see
+  Section 7 for what that would additionally require.
+- **(2026-07-30) Signing keys moved to Supabase Vault; code deployed
+  before the DB migration ran, not the other way around.** Explicitly
+  reasoned through with the user when asked "is there a chance this
+  breaks our environment?": Prisma Client and the actual DB schema must
+  never disagree about a column's existence while the app is live, since
+  every signal send touches `SigningKey`. Deploying the schema-updated
+  code first (which simply stops selecting the column) makes the DB
+  migration that drops it a no-op from the running app's perspective, no
+  matter when it's applied afterward. Reversing that order — drop first,
+  deploy second — would have broken every send in the gap. **Precedent
+  for future work**: any migration that removes a column a live app
+  reads must ship the code change first, migrate second, never the
+  reverse.
+- **(2026-07-30) The stale local `dev` branch was deleted and recut, not
+  reused.** It predated this entire session (10 commits behind `main`,
+  last touched during the Section 3.15-3.17 catalog work) and had zero
+  unmerged commits of its own — everything on it had already landed in
+  `main` long ago. Building new work on top of it would have meant
+  branching from stale code. **Precedent for future work**: before
+  reusing any existing branch, check `git log --oneline <branch>..main`
+  first — don't assume a branch found via `git branch` is current.
 
 ---
 
@@ -1336,7 +1667,12 @@ noted.
   (port `5432`, for migrations) vs Transaction pooler (port `6543`, for
   app runtime). Also: free Supabase projects **auto-pause after ~1 week of
   inactivity** — an SE returning to a stale demo may need to manually
-  resume their project first.
+  resume their project first. **Also confirmed (2026-07-30, while
+  validating the signing-key Vault migration): the free tier does not
+  include automated backups/point-in-time-recovery by default** — that's
+  a paid-plan feature. Worth knowing before treating "Supabase has our
+  back" as a safety net for any future destructive migration; the actual
+  safety net on this tier is whatever manual backups get made by hand.
 - **ISC's SSF Receiver only supports 5 CAEP event types**: `risk-level-
   change`, `credential-change`, `device-compliance-change`, `session-
   revoked`, `token-claims-change`. Never invent new SSF event type URIs.
@@ -1363,6 +1699,15 @@ noted.
   signal sent in this project *before* that point was triggered by a
   developer running `scripts/test-send.ts` from a terminal — that
   limitation is gone.
+- **RESOLVED 2026-07-30 (Section 3.25): this is no longer a hardcoded
+  single-tenant deployment.** `lib/tenant.ts`'s `TENANT_SLUG` constant is
+  gone, replaced by a cookie-based `getSelectedTenantSlug()`. A
+  single-tenant deployment still behaves identically (the fallback always
+  resolves to the first/only tenant), but any deployment can now be
+  provisioned with more via Admin > Tenants and switched between via the
+  sidebar. **Still true**: there's no per-user tenant restriction — every
+  authenticated user of a given deployment sees and can operate on every
+  tenant registered to it (see Section 5's 2026-07-30 decision note).
 - **If an SE ever pushes back and wants a "laptop-only" experience**, the
   source doc has an explicit, named answer for this, and it is not "build
   a local transmitter": *"the compromise is a thin local controller that
@@ -1523,19 +1868,23 @@ back toward them over time:
      JSON preview, real HTTP result.
    - **History** — ✅ built. Real `AuditLog` data, vendor/event name shown
      via the new `scenarioKey` column.
-   - **Admin catalog** — still **not built**. Adding/editing vendor
-     scenarios still requires a code change to `lib/catalog.ts` and a
-     redeploy. Explicitly deferred, not forgotten — see the design doc's
-     "What NOT to include."
+   - **Admin catalog** — **RESOLVED 2026-07-30 (Section 3.21)**. Vendor
+     scenarios now live in a `VendorScenario` Postgres table, and Admin >
+     Catalog adds/deletes them through the UI — no code change, no
+     redeploy. Verified live: a scenario added through the form appeared
+     in the Simulator immediately.
    Nice-to-haves still unbuilt: saved demo identities/picker, countdown/
    queued sends, companion Workflow JSON templates (see item 9 below), and
    preview-matches-wire-payload (arguably now satisfied in spirit by the
    Simulator's live JSON preview panel, though not literally comparing
    against a captured wire payload).
    **This was the single largest gap in the project relative to its stated
-   purpose** ("lets Solutions Engineers inject..." — not developers) — it
-   is now closed for the core 3-page flow; only the Admin catalog piece
-   remains.
+   purpose** ("lets Solutions Engineers inject..." — not developers).
+   **UPDATE 2026-07-30: fully closed.** All 4 pieces of the "minimum
+   viable SE surface" (Credentials, Simulator, History, Admin catalog) are
+   now built and live. Tenant provisioning also moved from CLI-only to a
+   real Admin > Tenants panel the same session (Section 3.25), closing
+   the one caveat left on the Credentials bullet above too.
 7. **The original "Threat Signal Transmitter" Receiver/Stream (the first
    one created, before "v2") still exists in ISC with a permanently
    expired authorization credential.** It was not deleted — only a second,
@@ -1580,28 +1929,36 @@ back toward them over time:
     payload" (no UI to preview anything in), "Identity picker" (no UI),
     "Scheduler/demo queue" (no UI). All correctly deferred to Phase 2/the
     Simulator UI — listed here only so they're not silently forgotten.
-12. **Phase 3 ("SE org scale") is entirely unaddressed.** The source doc
-    names four specific requirements for this phase: multi-tenant
-    isolation (partially exists — the `Tenant`/`Stream` schema is
-    multi-tenant-shaped, but never tested with a second real tenant),
-    **vault-backed secrets** (not done — see Section 8, signing keys are
-    plaintext in Postgres), **admin analytics** (not started, no UI to
-    have analytics in), and **MFA** (not started — no SE login system
-    exists at all yet, so there's nothing to add MFA to). None of these
-    are urgent for a single-tenant proof of concept, but all four should
-    be treated as blockers before this becomes "official" org-wide
-    tooling per the source doc's own phasing.
-13. **Two named stack pieces from the source doc were never adopted:**
-    - **Supabase *Vault*** for secrets — the source doc specifies this
-      explicitly in its stack table. We used plain Supabase *Postgres*
-      for the signing key instead (see Section 8's risk note). These are
-      different Supabase products; only the database was used, not the
-      vault.
-    - **Supabase *Auth*** (+ optional TOTP MFA) for SE portal login — not
-      implemented, because no portal exists to log into yet. This is the
-      mechanism the source doc specifies for "SE org access without a
-      home-rolled password store" — worth adopting from the start once
-      the Simulator UI work begins, rather than retrofitting auth later.
+12. **Phase 3 ("SE org scale") — 2 of 4 requirements now done.** The
+    source doc names four: **multi-tenant isolation** — **UPDATE
+    2026-07-30**: a single deployed instance can now register, switch
+    between, and operate on multiple real ISC tenants (Section 3.25),
+    tested with a second real tenant end-to-end (not just schema-shaped
+    anymore). Still missing from "isolation" specifically: no per-user
+    restriction — every authenticated user of a deployment can see every
+    tenant registered to it (Section 5's 2026-07-30 decision note; this
+    is the real remaining gap if per-SE-account isolation is ever
+    needed). **Vault-backed secrets** — **DONE 2026-07-30** (Section
+    3.24), see item 13 below. **Admin analytics** — **DONE 2026-07-30**,
+    the Admin Overview dashboard (Section 3.21) is exactly this: signals
+    sent, success rate, most-used vendor events, recent failures, now
+    aggregated across all tenants. **MFA** — still not started; deferred
+    by explicit user choice, not forgotten (Section 6). This is now the
+    only one of the four still open.
+13. **One of two named stack pieces from the source doc has now been
+    adopted:**
+    - **Supabase *Vault*** for secrets — **DONE 2026-07-30 (Section
+      3.24)**. Signing key private material is stored exclusively in
+      Supabase Vault; the plaintext PEM column was dropped after a live
+      pre/post-drop verification. `apiToken` (the credential ISC presents
+      back to us) is still plain Postgres — lower sensitivity than the
+      RS256 private key (it authenticates one specific stream/tenant
+      relationship, not the ability to forge signatures for one), not
+      moved in this pass, worth reconsidering later if this ever handles
+      real customer tenants rather than demo orgs.
+    - **Supabase *Auth*** (+ optional TOTP MFA) for SE portal login —
+      still done without MFA (Section 3.20), by explicit user choice, not
+      an oversight.
 14. **RESOLVED (2026-07-29). Was: `token-claims-change` Workflow's
     `Create Certification Campaign` step consistently failing.** Full
     detail in Section 3.14, which supersedes the "platform bug" framing
@@ -1667,20 +2024,59 @@ back toward them over time:
   uptime guarantees, no team collaboration on the private-repo path, and
   possible cold-start pausing. Fine for a demo tool; would need
   re-evaluation before any "official," org-wide rollout.
-- **Signing keys are currently stored as plaintext PEM in the Postgres
-  database** (`SigningKey.privateKeyPem`), per the schema comment
-  explicitly flagging this needs to move to a real managed vault (e.g.
-  Supabase Vault) before this is anything more than a proof-of-concept /
-  small-scale demo tool.
+- **RESOLVED 2026-07-30: signing keys are no longer plaintext PEM in
+  Postgres.** They live exclusively in Supabase Vault now
+  (`SigningKey.privateKeySecretId`, Section 3.24) — the old
+  `privateKeyPem` column no longer exists in the schema at all. A manual
+  local export of the one legacy key was made before the column was
+  dropped, kept outside the repo, in case it's ever needed for recovery.
+- **No per-user tenant isolation.** Any authenticated user of a given
+  deployment can see and operate on every tenant registered to it
+  (Section 5's 2026-07-30 decision note, Section 7 item 12). Not a bug —
+  a deliberate scoping decision for this pass of multi-tenant work — but
+  worth knowing if this deployment is ever shared with someone who
+  shouldn't see every tenant's Discovery URL/API token/audit history.
+- **Supabase free tier has no automated backups/PITR by default**
+  (confirmed 2026-07-30 while validating the signing-key migration — see
+  Section 6). Any future destructive migration on this project should
+  assume there is no infrastructure-level safety net unless someone has
+  since upgraded the plan or set up manual backups.
 
 ---
 
 ## 9. Exact Next Steps
 
+**UPDATE 2026-07-30 — read this before the tables below, some of which are
+now historical.** Most of what this section used to list as open is done:
+the Simulator/History/Credentials/Admin catalog UI (all 4 pieces of the
+"minimum viable SE surface"), tenant provisioning through the portal,
+Vault-backed signing keys, and admin analytics (the Overview dashboard).
+**What's genuinely still open, in priority order, as of this handoff:**
+1. **Companion Workflow JSON export** (backlog item 6, Section 9.1) — no
+   importable artifact exists yet for another SE to bring these 5
+   Workflows into their own ISC tenant. Still the most concrete, bounded
+   win left.
+2. **Per-user tenant isolation**, only if actually needed — every
+   authenticated user of a deployment currently sees every tenant
+   registered to it (Section 7 item 12, Section 8). Not started because
+   it hasn't been asked for; would be a real architectural addition, not
+   a small task, if it ever is.
+3. **The stale v1 Receiver/Stream** in ISC — still not deleted, still
+   undecided (Section 7 item 7).
+4. **`middleware.ts` → `proxy.ts` rename** — cosmetic, not urgent
+   (Section 3.20).
+5. **MFA** — explicitly deferred by user choice (Section 6), not
+   forgotten.
+6. **Verify Connection (`/ssf/verify`)** — permanently blocked, not
+   something further work will fix. Do not resurface "submit the support
+   case" (Section 5, Section 9.0 item 5).
+
 Immediate housekeeping first, then **explicitly mapped to `How to Build the
 SSF Transmitter.md`'s own "Suggested backlog (ordered)"**, since that
 document's priority order should govern what "next" means here rather than
-this session's improvised order.
+this session's improvised order. (Reading below this point is historical
+detail on how each backlog item's status evolved — the summary above is
+the accurate current state.)
 
 ### 9.0 Immediate housekeeping (do first, takes minutes)
 
@@ -1842,11 +2238,16 @@ while zero of it is usable by an actual SE until some UI exists.
 7. Deploy to Vercel: import the GitHub repo, set the `DATABASE_URL` env
    var to the Transaction pooler string, leave `NEXT_PUBLIC_APP_URL`
    unset (auto-detected). Deploy.
-8. Provision a tenant:
+8. Provision a tenant — **two ways, same result** (2026-07-30): either the
+   CLI script:
    ```
    npm run provision-tenant -- <your-tenant-slug> "<Human Readable Name>"
    ```
-   This prints an **API Token** and a **Discovery URL** — save both.
+   or, once logged into the deployed app, **Admin > Tenants > Add tenant**
+   in the UI. Both generate an **API Token** and a **Discovery URL** — the
+   UI shows them once right after creation; the Credentials page (for
+   whichever tenant is selected in the sidebar switcher) shows them again
+   anytime after.
 
 ### 10.3 How to wire a tenant into a real ISC org (Phase 0 gate)
 
@@ -1922,7 +2323,7 @@ npx tsx --env-file=.env scripts/check-stream-auth.ts <streamId>
 # Look up real ISC identities via the company21912 API client (read-only)
 npx tsx scripts/list-isc-identities.ts
 
-# Send any catalog scenario (see lib/catalog.ts) -- run with no args to list all 5
+# Send any catalog scenario (now DB-backed, see lib/vendorScenarios.ts -- lib/catalog.ts is historical/seed-only) -- run with no args to list all
 npx tsx --env-file=.env scripts/send-scenario.ts <streamId> <scenarioKey>
 
 # List every CAEP trigger's exact id -- use before wiring a new Workflow via API
@@ -1936,6 +2337,10 @@ npx tsx scripts/check-workflow-execution.ts [workflowId]
 
 # Full step-by-step execution history for one run (found via trial, not documented by SailPoint)
 npx tsx scripts/check-execution-detail.ts <workflowId> <executionId>
+
+# Pre-drop validation gate for the signing-key Vault migration (2026-07-30) --
+# reusable template for any future "move a secret out of a plain column" migration
+bash scripts/validate_key_migration.sh
 ```
 
 If signal sends start failing with `401` / `"JWT is expired"`, run
