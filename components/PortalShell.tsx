@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -11,23 +12,46 @@ const NAV = [
   { href: "/admin", label: "Admin" },
 ];
 
+interface TenantOption {
+  slug: string;
+  name: string;
+}
+
 export default function PortalShell({
   tenantSlug,
+  tenants,
   userEmail,
   children,
 }: {
   tenantSlug: string;
+  tenants: TenantOption[];
   userEmail: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [switching, setSwitching] = useState(false);
 
   async function handleSignOut() {
     const supabase = createClient();
     await supabase.auth.signOut();
     router.replace("/login");
     router.refresh();
+  }
+
+  async function handleTenantChange(nextSlug: string) {
+    if (nextSlug === tenantSlug) return;
+    setSwitching(true);
+    try {
+      await fetch("/api/tenant-selection", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: nextSlug }),
+      });
+      router.refresh();
+    } finally {
+      setSwitching(false);
+    }
   }
 
   return (
@@ -48,9 +72,29 @@ export default function PortalShell({
           <div style={{ fontSize: 15, fontWeight: 700, letterSpacing: "0.01em" }}>
             SSF Injector
           </div>
-          <div style={{ fontSize: 11, color: "oklch(0.55 0.01 70)", marginTop: 2 }}>
-            {tenantSlug}
-          </div>
+          <select
+            value={tenantSlug}
+            onChange={(e) => handleTenantChange(e.target.value)}
+            disabled={switching}
+            style={{
+              marginTop: 6,
+              width: "100%",
+              padding: "5px 6px",
+              fontSize: 11.5,
+              fontFamily: "'SF Mono', Consolas, monospace",
+              border: "1px solid oklch(0.8 0.025 230)",
+              borderRadius: 5,
+              background: "white",
+              color: "oklch(0.35 0.01 70)",
+              cursor: switching ? "not-allowed" : "pointer",
+            }}
+          >
+            {tenants.map((t) => (
+              <option key={t.slug} value={t.slug}>
+                {t.slug}
+              </option>
+            ))}
+          </select>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {NAV.map((item) => {
@@ -86,7 +130,7 @@ export default function PortalShell({
             gap: 6,
           }}
         >
-          <div>Internal demo tool — single tenant</div>
+          <div>Internal demo tool</div>
           <div style={{ color: "oklch(0.4 0.01 70)", fontWeight: 600 }}>{userEmail}</div>
           <button
             onClick={handleSignOut}
