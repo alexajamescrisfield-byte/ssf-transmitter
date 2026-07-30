@@ -2,7 +2,18 @@ import { randomUUID } from "crypto";
 import { SignJWT } from "jose";
 import { prisma } from "./prisma";
 import { importSigningPrivateKey } from "./keys";
+import { readSecret } from "./vault";
 import { buildCaepEvent, CaepEventInput } from "./caep";
+
+// Every signature this transmitter produces goes through this -- the
+// private key PEM is never stored in a plain column (see prisma/schema.prisma
+// SigningKey model comment), only in Supabase Vault, fetched fresh here.
+async function getSigningKeyPem(signingKey: { privateKeySecretId: string | null }): Promise<string> {
+  if (!signingKey.privateKeySecretId) {
+    throw new Error("Signing key has no privateKeySecretId -- run scripts/migrate-signing-key-to-vault.ts");
+  }
+  return readSecret(signingKey.privateKeySecretId);
+}
 
 // Root URL this transmitter is publicly reachable at. Must be correct before
 // ISC can discover/verify anything -- see the Phase 0 gate. Falls back to
@@ -85,7 +96,7 @@ export async function sendSsfSignal({
 
   const events = buildCaepEvent(event);
   const jti = randomUUID();
-  const privateKey = await importSigningPrivateKey(tenant.signingKey.privateKeyPem);
+  const privateKey = await importSigningPrivateKey(await getSigningKeyPem(tenant.signingKey));
 
   // Per the OpenID SSF spec Section 3.1: "A top-level claim named sub_id
   // MUST be used to describe the primary subject of the event." Not
@@ -171,7 +182,7 @@ export async function sendVerificationSet({
   if (!stream) throw new Error(`Unknown stream ${streamId} for tenant ${tenantSlug}`);
 
   const jti = randomUUID();
-  const privateKey = await importSigningPrivateKey(tenant.signingKey.privateKeyPem);
+  const privateKey = await importSigningPrivateKey(await getSigningKeyPem(tenant.signingKey));
 
   // Per the OpenID SSF spec Section 3.1: "A top-level claim named sub_id
   // MUST be used to describe the primary subject of the event." Not a

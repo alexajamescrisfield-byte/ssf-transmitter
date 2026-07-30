@@ -1,10 +1,12 @@
 import { randomUUID } from "crypto";
 import { exportJWK, exportPKCS8, generateKeyPair, importPKCS8 } from "jose";
 import { prisma } from "./prisma";
+import { storeSecret } from "./vault";
 
-// Phase 0: private key lives in SQLite as PEM text. Before any real
-// deployment this must move into a managed vault (e.g. Supabase Vault) --
-// see prisma/schema.prisma SigningKey model comment.
+// New signing keys are stored ONLY in Supabase Vault -- privateKeyPem is
+// never written for a key created after this change (see
+// prisma/schema.prisma's SigningKey model comment; existing keys were
+// backfilled via scripts/migrate-signing-key-to-vault.ts).
 export async function getOrCreateSigningKey(tenantId: string) {
   const existing = await prisma.signingKey.findUnique({ where: { tenantId } });
   if (existing) return existing;
@@ -19,11 +21,17 @@ export async function getOrCreateSigningKey(tenantId: string) {
   publicJwk.alg = "RS256";
   publicJwk.use = "sig";
 
+  const privateKeySecretId = await storeSecret(
+    privateKeyPem,
+    `signing-key-${tenantId}`,
+    `RS256 signing key private key for tenant ${tenantId}`,
+  );
+
   return prisma.signingKey.create({
     data: {
       tenantId,
       kid,
-      privateKeyPem,
+      privateKeySecretId,
       publicKeyJwk: JSON.stringify(publicJwk),
     },
   });

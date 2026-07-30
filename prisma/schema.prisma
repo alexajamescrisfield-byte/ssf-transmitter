@@ -29,17 +29,21 @@ model Tenant {
 }
 
 // RS256 keypair used to sign outbound SETs for this tenant.
-// Phase 0: private key stored as PEM text in this DB (SQLite, local dev only).
-// Before any real deployment, move `privateKeyPem` into a managed vault
-// (e.g. Supabase Vault) and store only a reference/key-id here instead.
+// privateKeySecretId references a row in Supabase Vault's vault.secrets
+// table (accessed via lib/vault.ts, not a Prisma-managed model since Vault
+// isn't part of this schema) -- the actual PEM never lives in a plain
+// column. privateKeyPem is kept temporarily, nullable, as a rollback safety
+// net during the migration; it is dropped in a follow-up migration once a
+// real signed send is verified working end-to-end against Vault.
 model SigningKey {
-  id            String   @id @default(cuid())
-  tenantId      String   @unique
-  tenant        Tenant   @relation(fields: [tenantId], references: [id])
-  kid           String   @unique
-  privateKeyPem String
-  publicKeyJwk  String // JSON-stringified JWK, served at /.well-known/jwks.json
-  createdAt     DateTime @default(now())
+  id                  String   @id @default(cuid())
+  tenantId            String   @unique
+  tenant              Tenant   @relation(fields: [tenantId], references: [id])
+  kid                 String   @unique
+  privateKeyPem       String?
+  privateKeySecretId  String?
+  publicKeyJwk        String // JSON-stringified JWK, served at /.well-known/jwks.json
+  createdAt           DateTime @default(now())
 }
 
 enum StreamStatus {

@@ -22,6 +22,14 @@ export async function createTestTenant(prefix = "test") {
 export async function cleanupTenant(tenantId: string) {
   await prisma.auditLog.deleteMany({ where: { tenantId } });
   await prisma.stream.deleteMany({ where: { tenantId } });
+
+  // getOrCreateSigningKey() (lib/keys.ts) stores the private key in Supabase
+  // Vault, not this table -- delete the vault.secrets row too, or every test
+  // run leaks an orphaned secret.
+  const signingKey = await prisma.signingKey.findUnique({ where: { tenantId } });
+  if (signingKey?.privateKeySecretId) {
+    await prisma.$queryRaw`delete from vault.secrets where id = ${signingKey.privateKeySecretId}::uuid`;
+  }
   await prisma.signingKey.deleteMany({ where: { tenantId } });
   await prisma.tenant.delete({ where: { id: tenantId } });
 }

@@ -11,6 +11,7 @@ import { join } from "path";
 import { SignJWT } from "jose";
 import { prisma } from "../lib/prisma";
 import { importSigningPrivateKey } from "../lib/keys";
+import { readSecret } from "../lib/vault";
 import { tenantIssuer } from "../lib/ssf";
 import { randomUUID } from "crypto";
 
@@ -28,7 +29,8 @@ async function main() {
   const stream = await prisma.stream.findFirst({ where: { id: streamId, tenantId: tenant.id } });
   if (!stream) throw new Error("stream not found");
 
-  const privateKey = await importSigningPrivateKey(tenant.signingKey.privateKeyPem);
+  if (!tenant.signingKey.privateKeySecretId) throw new Error("signing key has no privateKeySecretId");
+  const privateKey = await importSigningPrivateKey(await readSecret(tenant.signingKey.privateKeySecretId));
   const jti = randomUUID();
 
   const events = {
