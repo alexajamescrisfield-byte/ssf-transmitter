@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { VENDOR_SCENARIOS } from "@/lib/catalog";
+import { listVendorScenarios } from "@/lib/vendorScenarios";
 import { TENANT_SLUG } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
@@ -8,16 +8,19 @@ const COLUMNS = "1.3fr 1fr 1.6fr 1.8fr 0.8fr 0.9fr";
 
 export default async function HistoryPage() {
   const tenant = await prisma.tenant.findUnique({ where: { slug: TENANT_SLUG } });
-  const logs = tenant
-    ? await prisma.auditLog.findMany({
-        where: { tenantId: tenant.id },
-        orderBy: { createdAt: "desc" },
-        take: 100,
-      })
-    : [];
+  const [logs, scenarios] = await Promise.all([
+    tenant
+      ? prisma.auditLog.findMany({
+          where: { tenantId: tenant.id },
+          orderBy: { createdAt: "desc" },
+          take: 100,
+        })
+      : Promise.resolve([]),
+    listVendorScenarios(),
+  ]);
 
   const rows = logs.map((log) => {
-    const scenario = log.scenarioKey ? VENDOR_SCENARIOS[log.scenarioKey] : undefined;
+    const scenario = log.scenarioKey ? scenarios[log.scenarioKey] : undefined;
     return {
       id: log.id,
       timeDisplay: log.createdAt.toLocaleString(),

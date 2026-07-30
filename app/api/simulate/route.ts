@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { VENDOR_SCENARIOS } from "@/lib/catalog";
+import { getVendorScenario } from "@/lib/vendorScenarios";
 import { sendSsfSignal, StreamNotActiveError } from "@/lib/ssf";
 import { getActiveStream } from "@/lib/streams";
 import { TENANT_SLUG } from "@/lib/tenant";
@@ -16,7 +16,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const scenario = VENDOR_SCENARIOS[scenarioKey];
+  const scenario = await getVendorScenario(scenarioKey);
   if (!scenario) {
     return NextResponse.json({ error: `Unknown scenario: ${scenarioKey}` }, { status: 400 });
   }

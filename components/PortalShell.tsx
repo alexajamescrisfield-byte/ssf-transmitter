@@ -8,6 +8,7 @@ const NAV = [
   { href: "/", label: "Simulator" },
   { href: "/history", label: "History" },
   { href: "/credentials", label: "Credentials" },
+  { href: "/admin", label: "Admin" },
 ];
 
 export default function PortalShell({
@@ -53,7 +54,7 @@ export default function PortalShell({
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {NAV.map((item) => {
-            const active = pathname === item.href;
+            const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
               <Link
                 key={item.href}

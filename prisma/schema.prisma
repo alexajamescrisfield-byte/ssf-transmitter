@@ -65,6 +65,40 @@ model Stream {
   auditLogs AuditLog[]
 }
 
+// A vendor/event scenario in the Simulator's catalog. Previously a hardcoded
+// object in lib/catalog.ts -- moved to the DB so the Admin catalog page can
+// add new vendors/events without a code change + redeploy (HANDOFF_RUNBOOK.md
+// Section 7 item 6, "Admin catalog"). Not tenant-scoped: this project is
+// single-tenant by design (lib/tenant.ts), so the catalog is one global list,
+// same as the static file it replaces.
+model VendorScenario {
+  id                String   @id @default(cuid())
+  // Stable slug used everywhere a scenario is referenced (Simulator select,
+  // AuditLog.scenarioKey, API payloads) -- same role the object key played
+  // in the old static lib/catalog.ts map.
+  key               String   @unique
+  vendor            String
+  displayName       String
+  triggerCode       String
+  // One of lib/caep.ts's CAEP_EVENT_TYPES -- not a Prisma enum so adding a
+  // scenario never requires a schema migration, only lib/caep.ts already
+  // enforces the closed set of 5 at validation time.
+  caepType          String
+  // The event's required + optional claims (e.g. current_level/previous_level
+  // for risk-level-change), JSON-shaped exactly like CaepEventInput["claims"].
+  claims            Json
+  // Mirrors CaepEventInput's optional fields (lib/caep.ts) -- vendor/
+  // vendorEventType/recommendedAction are known to be stripped by ISC before
+  // a Workflow ever sees them (kept for audit value only); reasonAdmin is an
+  // official CAEP claim ISC does preserve.
+  vendorEventType   String?
+  recommendedAction String?
+  reasonAdmin       String?
+  reasonUser        String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
 // Every send attempt, success or failure. Server-side, per Section 10 of the
 // design doc -- this is the system-of-record independent of any one SE's
 // browser session.

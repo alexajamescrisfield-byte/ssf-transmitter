@@ -1,8 +1,9 @@
-// Send any catalog scenario (lib/catalog.ts) as a real signed SET.
+// Send any catalog scenario (VendorScenario table, see lib/vendorScenarios.ts)
+// as a real signed SET.
 // Usage: npx tsx --env-file=.env scripts/send-scenario.ts <streamId> <scenarioKey> [subjectEmail] [tenantSlug]
 import { sendSsfSignal } from "../lib/ssf";
 import { prisma } from "../lib/prisma";
-import { VENDOR_SCENARIOS } from "../lib/catalog";
+import { listVendorScenarios, getVendorScenario } from "../lib/vendorScenarios";
 
 async function main() {
   const [streamId, scenarioKey, subjectEmail, tenantSlug] = process.argv.slice(2);
@@ -12,13 +13,14 @@ async function main() {
       "Usage: npx tsx --env-file=.env scripts/send-scenario.ts <streamId> <scenarioKey> [subjectEmail] [tenantSlug]",
     );
     console.error("\nAvailable scenarios:");
-    for (const [key, s] of Object.entries(VENDOR_SCENARIOS)) {
+    const all = await listVendorScenarios();
+    for (const [key, s] of Object.entries(all)) {
       console.error(`  ${key.padEnd(30)} ${s.vendor} / ${s.displayName} (${s.event.type})`);
     }
     process.exit(1);
   }
 
-  const scenario = VENDOR_SCENARIOS[scenarioKey];
+  const scenario = await getVendorScenario(scenarioKey);
   if (!scenario) {
     console.error(`Unknown scenario "${scenarioKey}". Run with no args to list available ones.`);
     process.exit(1);
