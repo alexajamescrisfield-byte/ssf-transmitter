@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import PortalShell from "@/components/PortalShell";
-import { TENANT_SLUG } from "@/lib/tenant";
+import { getSelectedTenantSlug } from "@/lib/tenant";
+import { listTenantsWithStatus } from "@/lib/tenants";
 
 // Defense-in-depth: middleware.ts already redirects unauthenticated
 // requests before they reach here, but Supabase's own docs recommend also
@@ -22,8 +23,10 @@ export default async function PortalLayout({
     redirect("/login");
   }
 
+  const [tenantSlug, tenants] = await Promise.all([getSelectedTenantSlug(), listTenantsWithStatus()]);
+
   return (
-    <PortalShell tenantSlug={TENANT_SLUG} userEmail={user.email ?? ""}>
+    <PortalShell tenantSlug={tenantSlug} tenants={tenants} userEmail={user.email ?? ""}>
       {children}
     </PortalShell>
   );

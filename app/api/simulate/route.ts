@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getVendorScenario } from "@/lib/vendorScenarios";
 import { sendSsfSignal, StreamNotActiveError } from "@/lib/ssf";
 import { getActiveStream } from "@/lib/streams";
-import { TENANT_SLUG } from "@/lib/tenant";
+import { getSelectedTenantSlug } from "@/lib/tenant";
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
@@ -21,17 +21,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Unknown scenario: ${scenarioKey}` }, { status: 400 });
   }
 
-  const stream = await getActiveStream(TENANT_SLUG);
+  const tenantSlug = await getSelectedTenantSlug();
+  const stream = await getActiveStream(tenantSlug);
   if (!stream) {
     return NextResponse.json(
-      { error: `No enabled stream found for tenant ${TENANT_SLUG}. Create/enable one in ISC first.` },
+      { error: `No enabled stream found for tenant ${tenantSlug}. Create/enable one in ISC first.` },
       { status: 409 },
     );
   }
 
   try {
     const result = await sendSsfSignal({
-      tenantSlug: TENANT_SLUG,
+      tenantSlug,
       streamId: stream.id,
       scenarioKey,
       event: { ...scenario.event, subjectEmail },

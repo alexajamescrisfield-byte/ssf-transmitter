@@ -1,13 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { listVendorScenarios } from "@/lib/vendorScenarios";
-import { TENANT_SLUG } from "@/lib/tenant";
+import { getSelectedTenantSlug } from "@/lib/tenant";
 
 export const dynamic = "force-dynamic";
 
 const COLUMNS = "1.3fr 1fr 1.6fr 1.8fr 0.8fr 0.9fr";
 
 export default async function HistoryPage() {
-  const tenant = await prisma.tenant.findUnique({ where: { slug: TENANT_SLUG } });
+  const tenantSlug = await getSelectedTenantSlug();
+  const tenant = await prisma.tenant.findUnique({ where: { slug: tenantSlug } });
   const [logs, scenarios] = await Promise.all([
     tenant
       ? prisma.auditLog.findMany({

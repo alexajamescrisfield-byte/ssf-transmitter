@@ -1,7 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { TENANT_SLUG } from "@/lib/tenant";
-import { getActiveStream } from "@/lib/streams";
 import { listVendorScenarios } from "@/lib/vendorScenarios";
+import { listTenantsWithStatus } from "@/lib/tenants";
 import AdminNav from "@/components/AdminNav";
 
 export const dynamic = "force-dynamic";
@@ -39,37 +38,35 @@ function daysAgo(n: number): Date {
 }
 
 export default async function AdminOverviewPage() {
-  const tenant = await prisma.tenant.findUnique({ where: { slug: TENANT_SLUG } });
-  const tenantId = tenant?.id;
-
-  const [stream, totalCount, successCount, last24h, last7d, last30d, grouped, recentFailures, scenarios] =
+  // Aggregated across ALL tenants -- Overview is a cross-tenant dashboard,
+  // unlike Simulator/History/Credentials which operate on one selected
+  // tenant. Matches the reference portal's "(all tenants)" framing.
+  const [tenants, totalCount, successCount, last24h, last7d, last30d, grouped, recentFailures, scenarios] =
     await Promise.all([
-      getActiveStream(TENANT_SLUG),
-      tenantId ? prisma.auditLog.count({ where: { tenantId } }) : 0,
-      tenantId ? prisma.auditLog.count({ where: { tenantId, success: true } }) : 0,
-      tenantId ? prisma.auditLog.count({ where: { tenantId, createdAt: { gte: daysAgo(1) } } }) : 0,
-      tenantId ? prisma.auditLog.count({ where: { tenantId, createdAt: { gte: daysAgo(7) } } }) : 0,
-      tenantId ? prisma.auditLog.count({ where: { tenantId, createdAt: { gte: daysAgo(30) } } }) : 0,
-      tenantId
-        ? prisma.auditLog.groupBy({
-            by: ["scenarioKey"],
-            where: { tenantId, scenarioKey: { not: null } },
-            _count: { scenarioKey: true },
-            orderBy: { _count: { scenarioKey: "desc" } },
-            take: 5,
-          })
-        : [],
-      tenantId
-        ? prisma.auditLog.findMany({
-            where: { tenantId, success: false },
-            orderBy: { createdAt: "desc" },
-            take: 10,
-          })
-        : [],
+      listTenantsWithStatus(),
+      prisma.auditLog.count(),
+      prisma.auditLog.count({ where: { success: true } }),
+      prisma.auditLog.count({ where: { createdAt: { gte: daysAgo(1) } } }),
+      prisma.auditLog.count({ where: { createdAt: { gte: daysAgo(7) } } }),
+      prisma.auditLog.count({ where: { createdAt: { gte: daysAgo(30) } } }),
+      prisma.auditLog.groupBy({
+        by: ["scenarioKey"],
+        where: { scenarioKey: { not: null } },
+        _count: { scenarioKey: true },
+        orderBy: { _count: { scenarioKey: "desc" } },
+        take: 5,
+      }),
+      prisma.auditLog.findMany({
+        where: { success: false },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+        include: { tenant: { select: { slug: true, name: true } } },
+      }),
       listVendorScenarios(),
     ]);
 
   const successRate = totalCount > 0 ? Math.round((successCount / totalCount) * 100) : 0;
+  const activeTenantCount = tenants.filter((t) => t.hasActiveStream).length;
 
   const mostUsed = grouped.map((g) => {
     const scenario = g.scenarioKey ? scenarios[g.scenarioKey] : undefined;
@@ -85,6 +82,7 @@ export default async function AdminOverviewPage() {
     return {
       id: log.id,
       timeDisplay: log.createdAt.toLocaleString(),
+      tenantLabel: log.tenant.name || log.tenant.slug,
       label: scenario ? `${scenario.vendor} — ${scenario.displayName}` : log.eventType,
       response: log.responseBody
         ? `${log.httpStatus ?? "—"} ${log.responseBody.slice(0, 60)}${log.responseBody.length > 60 ? "…" : ""}`
@@ -96,18 +94,18 @@ export default async function AdminOverviewPage() {
     <div>
       <h1 style={{ fontSize: 22, fontWeight: 700, margin: "0 0 4px 0" }}>Overview</h1>
       <p style={{ fontSize: 13, color: "oklch(0.5 0.01 70)", margin: "0 0 20px 0" }}>
-        Usage and health for this tenant.
+        Usage and health across all tenants.
       </p>
 
       <AdminNav />
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 28 }}>
         <div style={CARD_STYLE}>
-          <div style={CARD_LABEL_STYLE}>TENANT</div>
-          <div style={{ ...CARD_VALUE_STYLE, fontSize: 18, fontFamily: "'SF Mono', Consolas, monospace" }}>
-            {TENANT_SLUG}
+          <div style={CARD_LABEL_STYLE}>TENANTS</div>
+          <div style={CARD_VALUE_STYLE}>{tenants.length}</div>
+          <div style={CARD_SUB_STYLE}>
+            {activeTenantCount} active, {tenants.length - activeTenantCount} not linked
           </div>
-          <div style={CARD_SUB_STYLE}>{stream ? "Active stream" : "No active stream"}</div>
         </div>
         <div style={CARD_STYLE}>
           <div style={CARD_LABEL_STYLE}>SIGNALS SENT</div>
@@ -128,7 +126,7 @@ export default async function AdminOverviewPage() {
         </div>
       </div>
 
-      <h2 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 12px 0" }}>Most-used vendor events</h2>
+      <h2 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 12px 0" }}>Most-used vendor events (all tenants)</h2>
       <div
         style={{
           background: "oklch(0.97 0.008 75)",
@@ -178,7 +176,7 @@ export default async function AdminOverviewPage() {
         )}
       </div>
 
-      <h2 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 12px 0" }}>Recent failures (last 10)</h2>
+      <h2 style={{ fontSize: 15, fontWeight: 700, margin: "0 0 12px 0" }}>Recent failures (last 10, all tenants)</h2>
       <div
         style={{
           background: "oklch(0.97 0.008 75)",
@@ -190,7 +188,7 @@ export default async function AdminOverviewPage() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "1.3fr 2fr 2fr",
+            gridTemplateColumns: "1.1fr 1fr 1.6fr 1.6fr",
             gap: 8,
             padding: "12px 20px",
             background: "oklch(0.95 0.01 70)",
@@ -201,6 +199,7 @@ export default async function AdminOverviewPage() {
           }}
         >
           <div>TIME</div>
+          <div>TENANT</div>
           <div>VENDOR / EVENT</div>
           <div>RESPONSE</div>
         </div>
@@ -209,7 +208,7 @@ export default async function AdminOverviewPage() {
             key={row.id}
             style={{
               display: "grid",
-              gridTemplateColumns: "1.3fr 2fr 2fr",
+              gridTemplateColumns: "1.1fr 1fr 1.6fr 1.6fr",
               gap: 8,
               padding: "14px 20px",
               borderTop: "1px solid oklch(0.92 0.01 70)",
@@ -220,6 +219,7 @@ export default async function AdminOverviewPage() {
             <div style={{ color: "oklch(0.45 0.01 70)", fontFamily: "'SF Mono', Consolas, monospace" }}>
               {row.timeDisplay}
             </div>
+            <div style={{ fontWeight: 600 }}>{row.tenantLabel}</div>
             <div style={{ color: "oklch(0.55 0.15 25)", fontWeight: 600 }}>{row.label}</div>
             <div style={{ fontFamily: "'SF Mono', Consolas, monospace", fontSize: 11.5, color: "oklch(0.45 0.01 70)" }}>
               {row.response}
